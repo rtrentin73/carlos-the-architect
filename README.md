@@ -2,9 +2,6 @@
 
 ![Carlos](frontend/src/assets/splash.jpg)
 
-git remote set-url origin https://github.com/yourusername/carlos-the-architect.git
----
-
 ## How It Works
 
 ### High-Level Flow
