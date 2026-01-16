@@ -1,0 +1,149 @@
+from typing import TypedDict, Annotated
+from langgraph.graph import StateGraph, START, END
+from langchain_openai import AzureChatOpenAI
+from tasks import (
+    CARLOS_INSTRUCTIONS,
+    AUDITOR_INSTRUCTIONS,
+    SECURITY_ANALYST_INSTRUCTIONS,
+    COST_ANALYST_INSTRUCTIONS,
+    RELIABILITY_ENGINEER_INSTRUCTIONS,
+)
+import os
+
+class CarlosState(TypedDict):
+    requirements: str
+    design_doc: str
+    audit_status: str  # "pending", "approved", "needs_revision"
+    audit_report: str
+    conversation: str  # running log of agent messages
+    security_report: str
+    cost_report: str
+    reliability_report: str
+
+# Create LLM with explicit env vars
+llm = AzureChatOpenAI(
+    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
+    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+    temperature=0.7,
+)
+
+async def carlos_design_node(state: CarlosState):
+    """Carlos drafts the infrastructure"""
+    scenario = state.get("scenario")
+    priorities = state.get("priorities", {}) or {}
+
+    context_lines = []
+    if scenario and scenario != "custom":
+        context_lines.append(f"Scenario preset: {scenario} (interpret and adapt as needed).")
+
+    cp = priorities.get("cost_performance")
+    if cp == "cost_optimized":
+        context_lines.append("Non-functional priority: minimize monthly cost while keeping the design sane.")
+    elif cp == "performance_optimized":
+        context_lines.append("Non-functional priority: favor performance and low latency, even at higher cost.")
+    elif cp == "balanced":
+        context_lines.append("Non-functional priority: balanced cost vs performance.")
+
+    compliance = priorities.get("compliance")
+    if compliance == "regulated":
+        context_lines.append("Assume a regulated workload (e.g., PCI/HIPAA); call out controls explicitly.")
+    elif compliance == "strict":
+        context_lines.append("Assume very strict compliance/government requirements; be conservative.")
+
+    rel = priorities.get("reliability")
+    if rel == "high":
+        context_lines.append("Target high availability (around 99.9–99.99%) with appropriate redundancy.")
+    elif rel == "extreme":
+        context_lines.append("Target extreme reliability with multi-region or multi-AZ resilience.")
+
+    strict = priorities.get("strictness")
+    if strict == "flexible":
+        context_lines.append(
+            "Design can be flexible: mix managed services, containers, and Kubernetes if it clearly helps. No hard guardrails."
+        )
+    elif strict == "balanced":
+        context_lines.append(
+            "Be opinionated but pragmatic: prefer managed/PaaS services and only introduce Kubernetes or complex stacks when clearly justified."
+        )
+    elif strict == "strict":
+        context_lines.append(
+            "Be strongly opinionated: stick to AWS-native managed services where possible, avoid Kubernetes unless absolutely necessary, and avoid unnecessary complexity."
+        )
+
+    extra_context = "\n".join(context_lines)
+
+    prompt = f"{CARLOS_INSTRUCTIONS}\n\nUser requirements: {state['requirements']}" + (
+        f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
+    )
+    response = ""
+    async for chunk in llm.astream(prompt):
+        response += chunk.content
+    print(f"Design response: {response}")
+    convo = state.get("conversation", "")
+    convo += "**Carlos:**\n" + response + "\n\n"
+    return {"design_doc": response, "audit_status": "pending", "conversation": convo}
+
+
+async def security_node(state: CarlosState):
+    """Security analyst reviews the design."""
+    prompt = f"{SECURITY_ANALYST_INSTRUCTIONS}\n\nDesign to review:\n{state['design_doc']}"
+    response = await llm.ainvoke(prompt)
+    convo = state.get("conversation", "")
+    convo += "**Security Analyst:**\n" + response.content + "\n\n"
+    return {"security_report": response.content, "conversation": convo}
+
+
+async def cost_node(state: CarlosState):
+    """Cost optimization specialist reviews the design."""
+    prompt = f"{COST_ANALYST_INSTRUCTIONS}\n\nDesign to review:\n{state['design_doc']}"
+    response = await llm.ainvoke(prompt)
+    convo = state.get("conversation", "")
+    convo += "**Cost Specialist:**\n" + response.content + "\n\n"
+    return {"cost_report": response.content, "conversation": convo}
+
+
+async def reliability_node(state: CarlosState):
+    """SRE reviews the design."""
+    prompt = f"{RELIABILITY_ENGINEER_INSTRUCTIONS}\n\nDesign to review:\n{state['design_doc']}"
+    response = await llm.ainvoke(prompt)
+    convo = state.get("conversation", "")
+    convo += "**SRE:**\n" + response.content + "\n\n"
+    return {"reliability_report": response.content, "conversation": convo}
+
+async def auditor_node(state: CarlosState):
+    """Final auditor aggregates all specialist feedback."""
+    prompt = (
+        f"{AUDITOR_INSTRUCTIONS}\n\n"
+        f"=== Original Design ===\n{state['design_doc']}\n\n"
+        f"=== Security Report ===\n{state.get('security_report', '')}\n\n"
+        f"=== Cost Report ===\n{state.get('cost_report', '')}\n\n"
+        f"=== Reliability Report ===\n{state.get('reliability_report', '')}\n\n"
+    )
+    response = await llm.ainvoke(prompt)
+    status = "approved" if "APPROVED" in response.content.upper() else "needs_revision"
+    convo = state.get("conversation", "")
+    convo += "**Chief Auditor:**\n" + response.content + "\n\n"
+    return {"audit_status": status, "audit_report": response.content, "conversation": convo}
+
+# Build graph
+builder = StateGraph(CarlosState)
+builder.add_node("design", carlos_design_node)
+builder.add_node("security", security_node)
+builder.add_node("cost", cost_node)
+builder.add_node("reliability", reliability_node)
+builder.add_node("audit", auditor_node)
+
+builder.add_edge(START, "design")
+builder.add_edge("design", "security")
+builder.add_edge("security", "cost")
+builder.add_edge("cost", "reliability")
+builder.add_edge("reliability", "audit")
+
+builder.add_conditional_edges(
+    "audit",
+    lambda x: END if x["audit_status"] == "approved" else "design",
+)
+
+carlos_graph = builder.compile()

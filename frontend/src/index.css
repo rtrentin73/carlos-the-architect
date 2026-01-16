@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* You can also define your "Architect" theme here */
+@theme {
+  --color-brand-blue: #2563eb;
+  --font-blueprint: "Inter", sans-serif;
+}
