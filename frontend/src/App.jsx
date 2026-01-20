@@ -14,6 +14,7 @@ export default function App() {
   const [reliabilityLevel, setReliabilityLevel] = useState("normal");
   const [strictnessLevel, setStrictnessLevel] = useState("balanced");
   const [design, setDesign] = useState("");
+  const [roneiDesign, setRoneiDesign] = useState("");
   const [isDesigning, setIsDesigning] = useState(false);
   const [auditStatus, setAuditStatus] = useState("");
   const [auditReport, setAuditReport] = useState("");
@@ -22,6 +23,7 @@ export default function App() {
   const [reliabilityReport, setReliabilityReport] = useState("");
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
+  const [blueprintTab, setBlueprintTab] = useState("carlos");
   const [history, setHistory] = useState(() => {
     const saved = localStorage.getItem("designHistory");
     return saved ? JSON.parse(saved) : [];
@@ -66,6 +68,7 @@ export default function App() {
       } else if (data.design) {
         console.log("Design received, length:", data.design.length);
         setDesign(data.design);
+        setRoneiDesign(data.ronei_design || "");
         setAuditStatus(data.audit_status || "");
         setAuditReport(data.audit_report || "");
         setSecurityReport(data.security_report || "");
@@ -83,6 +86,7 @@ export default function App() {
           reliabilityLevel,
           strictnessLevel,
           design: data.design,
+          roneiDesign: data.ronei_design || "",
           auditStatus: data.audit_status || "",
           auditReport: data.audit_report || "",
           securityReport: data.security_report || "",
@@ -119,7 +123,7 @@ export default function App() {
         : "Custom";
 
     const content = [
-      "# Carlos Cloud Blueprint",
+      "# Carlos & Ronei Cloud Blueprint",
       "",
       `Generated: ${timestamp}`,
       "",
@@ -134,9 +138,13 @@ export default function App() {
       `- Compliance Level: ${complianceLevel}`,
       `- Reliability Target: ${reliabilityLevel}`,
       "",
-      "## Design",
+      "## Carlos' Design",
       "",
-      design,
+      design || "_Carlos' design not generated._",
+      "",
+      "## Ronei's Design",
+      "",
+      roneiDesign || "_Ronei's design not generated._",
       "",
       "## Security Analyst Report",
       "",
@@ -280,8 +288,52 @@ export default function App() {
                     </button>
                   </div>
                 )}
-                {design ? (
-                  <BlueprintWithDiagram design={design} />
+                {design || roneiDesign ? (
+                  <div>
+                    {/* Design Tabs */}
+                    <div className="flex border-b border-slate-200 mb-6">
+                      <button
+                        onClick={() => setBlueprintTab("carlos")}
+                        className={`px-4 py-2 font-medium text-sm ${
+                          blueprintTab === "carlos"
+                            ? "border-b-2 border-blue-500 text-blue-600"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Carlos' Design
+                      </button>
+                      <button
+                        onClick={() => setBlueprintTab("ronei")}
+                        className={`px-4 py-2 font-medium text-sm ${
+                          blueprintTab === "ronei"
+                            ? "border-b-2 border-purple-500 text-purple-600"
+                            : "text-slate-500 hover:text-slate-700"
+                        }`}
+                      >
+                        Ronei's Design
+                      </button>
+                    </div>
+                    
+                    {/* Design Content */}
+                    {blueprintTab === "carlos" && design && (
+                      <BlueprintWithDiagram design={design} />
+                    )}
+                    {blueprintTab === "ronei" && roneiDesign && (
+                      <BlueprintWithDiagram design={roneiDesign} />
+                    )}
+                    {blueprintTab === "carlos" && !design && (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                        <Cloud size={64} className="mb-4 opacity-20"/>
+                        <p className="text-xl italic">Waiting for Carlos' design...</p>
+                      </div>
+                    )}
+                    {blueprintTab === "ronei" && !roneiDesign && (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300">
+                        <Cloud size={64} className="mb-4 opacity-20"/>
+                        <p className="text-xl italic">Waiting for Ronei's design...</p>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center text-slate-300">
                     <Cloud size={64} className="mb-4 opacity-20"/>
@@ -304,6 +356,7 @@ export default function App() {
                         onClick={() => {
                           setCurrentView("blueprint");
                           setDesign(entry.design);
+                          setRoneiDesign(entry.roneiDesign || "");
                           setInput(entry.requirements);
                           if (entry.scenario) setScenario(entry.scenario);
                           if (entry.costPerformance) setCostPerformance(entry.costPerformance);
@@ -411,6 +464,13 @@ export default function App() {
                     icon={<PenTool size={18} />}
                     name="Carlos (Lead Cloud Architect)"
                     description="Drafts the initial end-to-end cloud architecture blueprint based on your requirements and the selected scenario/priorities."
+                  />
+                  <AgentInfo
+                    iconBg="bg-pink-100"
+                    labelColor="text-pink-700"
+                    icon={<PenTool size={18} />}
+                    name="Ronei, the Cat (Rival Architect)"
+                    description="Creates a competing modern design favoring containers, Kubernetes, and cutting-edge tech. Challenges Carlos' traditional approach with sass and cat puns."
                   />
                   <AgentInfo
                     iconBg="bg-emerald-100"
@@ -564,7 +624,7 @@ function MermaidDiagram({ definition }) {
         if (typeof svg === 'string' && svg.includes('Syntax error in text')) {
           console.warn('Mermaid syntax error in diagram definition:', definition);
           containerRef.current.innerHTML =
-            '<p class="text-xs text-amber-700">Diagram could not be generated from this design.</p>';
+            '<div class="bg-amber-50 border border-amber-200 rounded p-3"><p class="text-sm text-amber-800 font-medium">⚠️ Diagram Syntax Error</p><p class="text-xs text-amber-700 mt-1">The generated architecture diagram has syntax issues. This doesn\'t affect the blueprint quality - you can still read the detailed design below.</p></div>';
         } else {
           containerRef.current.innerHTML = svg;
         }
@@ -573,7 +633,7 @@ function MermaidDiagram({ definition }) {
         console.error('Error rendering mermaid diagram', e, '\nDefinition:\n', definition);
         if (containerRef.current) {
           containerRef.current.innerHTML =
-            '<p class="text-xs text-amber-700">Diagram could not be generated from this design.</p>';
+            '<div class="bg-red-50 border border-red-200 rounded p-3"><p class="text-sm text-red-800 font-medium">⚠️ Diagram Rendering Error</p><p class="text-xs text-red-700 mt-1">Unable to render the architecture diagram. The detailed blueprint below is still valid.</p></div>';
         }
       });
   }, [definition]);
