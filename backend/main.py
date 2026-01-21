@@ -33,6 +33,7 @@ async def design(req: dict):
             version="v2",
         )
         design_doc = result.get("design_doc", "")
+        ronei_design = result.get("ronei_design", "")
         audit_status = result.get("audit_status", "unknown")
         audit_report = result.get("audit_report", "")
         conversation = result.get("conversation", "")
@@ -40,13 +41,14 @@ async def design(req: dict):
         cost_report = result.get("cost_report", "")
         reliability_report = result.get("reliability_report", "")
         print(
-            f"Design generated, length={len(design_doc)}, "
+            f"Design generated, length={len(design_doc)}, ronei_length={len(ronei_design)}, "
             f"audit_status={audit_status}, audit_report_len={len(audit_report)}, "
             f"security_len={len(security_report)}, cost_len={len(cost_report)}, "
             f"reliability_len={len(reliability_report)}, convo_len={len(conversation)}"
         )
         return {
             "design": design_doc,
+            "ronei_design": ronei_design,
             "audit_status": audit_status,
             "audit_report": audit_report,
             "agent_chat": conversation,
