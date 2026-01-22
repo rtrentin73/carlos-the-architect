@@ -40,6 +40,10 @@ export default function App() {
     audit: 'pending',
     recommender: 'pending'
   });
+  const [tokenCounts, setTokenCounts] = useState({
+    carlos: 0,
+    ronei_design: 0
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 3000);
@@ -47,6 +51,16 @@ export default function App() {
   }, []);
 
   const handleStreamEvent = (event) => {
+    const agentDescriptions = {
+      design: 'Carlos (Lead Cloud Architect) - Designing cloud infrastructure',
+      ronei_design: 'Ronei (Rival Architect) - Creating alternative modern design',
+      security: 'Security Analyst - Reviewing security posture',
+      cost: 'Cost Optimization Specialist - Analyzing cost efficiency',
+      reliability: 'SRE - Evaluating reliability and operations',
+      audit: 'Chief Auditor - Performing final audit review',
+      recommender: 'Design Recommender - Choosing best design approach'
+    };
+
     switch (event.type) {
       case "agent_start":
         console.log(`🚀 Agent ${event.agent} started`);
@@ -54,7 +68,7 @@ export default function App() {
           id: Date.now() + Math.random(),
           type: 'start',
           agent: event.agent,
-          message: `Agent ${event.agent} started`,
+          message: agentDescriptions[event.agent] || `Agent ${event.agent} started`,
           timestamp: event.timestamp || new Date().toISOString()
         }]);
         setAgentStatuses(prev => ({ ...prev, [event.agent]: 'active' }));
@@ -66,7 +80,7 @@ export default function App() {
           id: Date.now() + Math.random(),
           type: 'complete',
           agent: event.agent,
-          message: `Agent ${event.agent} completed`,
+          message: `${event.agent} completed successfully`,
           timestamp: event.timestamp || new Date().toISOString()
         }]);
         setAgentStatuses(prev => ({ ...prev, [event.agent]: 'completed' }));
@@ -75,12 +89,65 @@ export default function App() {
       case "token":
         if (event.agent === "carlos") {
           setDesign(prev => prev + event.content);
+          setTokenCounts(prev => ({ ...prev, carlos: prev.carlos + 1 }));
+
+          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
+          setTokenCounts(prev => {
+            const newCount = prev.carlos + 1;
+            if (newCount % 50 === 0) {
+              setActivityLog(activityPrev => [...activityPrev, {
+                id: Date.now() + Math.random(),
+                type: 'streaming',
+                agent: 'carlos',
+                message: `Carlos streaming design... (${newCount} tokens)`,
+                timestamp: event.timestamp || new Date().toISOString()
+              }]);
+            }
+            return { ...prev, carlos: newCount };
+          });
         } else if (event.agent === "ronei_design") {
           setRoneiDesign(prev => prev + event.content);
+          setTokenCounts(prev => ({ ...prev, ronei_design: prev.ronei_design + 1 }));
+
+          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
+          setTokenCounts(prev => {
+            const newCount = prev.ronei_design + 1;
+            if (newCount % 50 === 0) {
+              setActivityLog(activityPrev => [...activityPrev, {
+                id: Date.now() + Math.random(),
+                type: 'streaming',
+                agent: 'ronei_design',
+                message: `Ronei streaming design... (${newCount} tokens)`,
+                timestamp: event.timestamp || new Date().toISOString()
+              }]);
+            }
+            return { ...prev, ronei_design: newCount };
+          });
         }
         break;
 
       case "field_update":
+        const fieldLabels = {
+          security_report: 'Security Analysis Report',
+          cost_report: 'Cost Optimization Report',
+          reliability_report: 'Reliability & Operations Report',
+          audit_report: 'Chief Auditor Verdict',
+          audit_status: 'Audit Status',
+          recommendation: 'Design Recommendation'
+        };
+
+        // Add to activity log
+        const preview = event.content ? event.content.substring(0, 150) + '...' : '';
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'report',
+          agent: event.field,
+          message: `${fieldLabels[event.field] || event.field} generated`,
+          detail: preview,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+
+        // Update state
         switch (event.field) {
           case "security_report":
             setSecurityReport(event.content);
@@ -166,6 +233,10 @@ export default function App() {
       reliability: 'pending',
       audit: 'pending',
       recommender: 'pending'
+    });
+    setTokenCounts({
+      carlos: 0,
+      ronei_design: 0
     });
     setIsDesigning(true);
 
@@ -517,6 +588,8 @@ export default function App() {
                           className={`flex items-start gap-3 p-3 rounded-lg ${
                             log.type === 'start' ? 'bg-blue-50 border-l-4 border-blue-500' :
                             log.type === 'complete' ? 'bg-green-50 border-l-4 border-green-500' :
+                            log.type === 'report' ? 'bg-purple-50 border-l-4 border-purple-500' :
+                            log.type === 'streaming' ? 'bg-cyan-50 border-l-4 border-cyan-500' :
                             log.type === 'error' ? 'bg-red-50 border-l-4 border-red-500' :
                             'bg-white border-l-4 border-gray-300'
                           }`}
@@ -524,10 +597,17 @@ export default function App() {
                           <div className="flex-shrink-0 mt-1">
                             {log.type === 'start' && <span className="text-blue-600 text-xl">🚀</span>}
                             {log.type === 'complete' && <span className="text-green-600 text-xl">✅</span>}
+                            {log.type === 'report' && <span className="text-purple-600 text-xl">📄</span>}
+                            {log.type === 'streaming' && <span className="text-cyan-600 text-xl">⚡</span>}
                             {log.type === 'error' && <span className="text-red-600 text-xl">❌</span>}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-slate-800">{log.message}</p>
+                            {log.detail && (
+                              <p className="text-xs text-slate-600 mt-2 p-2 bg-white rounded border border-slate-200 italic">
+                                {log.detail}
+                              </p>
+                            )}
                             <p className="text-xs text-slate-500 mt-1">
                               {new Date(log.timestamp).toLocaleTimeString()}
                             </p>
