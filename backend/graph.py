@@ -8,6 +8,7 @@ from tasks import (
     COST_ANALYST_INSTRUCTIONS,
     RELIABILITY_ENGINEER_INSTRUCTIONS,
     RONEI_INSTRUCTIONS,
+    DESIGN_RECOMMENDER_INSTRUCTIONS,
 )
 import os
 
@@ -17,6 +18,7 @@ class CarlosState(TypedDict):
     ronei_design: str
     audit_status: str  # "pending", "approved", "needs_revision"
     audit_report: str
+    recommendation: str
     conversation: str  # running log of agent messages
     security_report: str
     cost_report: str
@@ -205,6 +207,33 @@ async def auditor_node(state: CarlosState):
     convo += "**Chief Auditor:**\n" + response.content + "\n\n"
     return {"audit_status": status, "audit_report": response.content, "conversation": convo}
 
+
+async def recommender_node(state: CarlosState):
+    """Recommend Carlos vs Ronei based on all outputs."""
+    prompt = (
+        f"{DESIGN_RECOMMENDER_INSTRUCTIONS}\n\n"
+        f"=== User Requirements ===\n{state['requirements']}\n\n"
+        f"=== Carlos' Design ===\n{state.get('design_doc', '')}\n\n"
+        f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
+        f"=== Security Report ===\n{state.get('security_report', '')}\n\n"
+        f"=== Cost Report ===\n{state.get('cost_report', '')}\n\n"
+        f"=== Reliability Report ===\n{state.get('reliability_report', '')}\n\n"
+        f"=== Chief Auditor Verdict ===\n{state.get('audit_report', '')}\n\n"
+    )
+    response = await llm.ainvoke(prompt)
+    content = (response.content or "").strip()
+    upper = content.upper()
+    if not (upper.startswith("RECOMMEND: CARLOS") or upper.startswith("RECOMMEND: RONEI")):
+        if "CARLOS" in upper and "RONEI" not in upper:
+            content = "RECOMMEND: CARLOS\n\n" + content
+        elif "RONEI" in upper and "CARLOS" not in upper:
+            content = "RECOMMEND: RONEI\n\n" + content
+        else:
+            content = "RECOMMEND: CARLOS\n\n" + content
+    convo = state.get("conversation", "")
+    convo += "**Design Recommender:**\n" + content + "\n\n"
+    return {"recommendation": content, "conversation": convo}
+
 # Build graph
 builder = StateGraph(CarlosState)
 builder.add_node("design", carlos_design_node)
@@ -213,6 +242,7 @@ builder.add_node("security", security_node)
 builder.add_node("cost", cost_node)
 builder.add_node("reliability", reliability_node)
 builder.add_node("audit", auditor_node)
+builder.add_node("recommender", recommender_node)
 
 builder.add_edge(START, "design")
 builder.add_edge("design", "ronei_design")
@@ -223,7 +253,9 @@ builder.add_edge("reliability", "audit")
 
 builder.add_conditional_edges(
     "audit",
-    lambda x: END if x["audit_status"] == "approved" else "design",
+    lambda x: "recommender" if x["audit_status"] == "approved" else "design",
 )
+
+builder.add_edge("recommender", END)
 
 carlos_graph = builder.compile()
