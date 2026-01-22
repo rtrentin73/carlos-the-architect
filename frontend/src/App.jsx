@@ -740,8 +740,8 @@ export default function App() {
               <div>
                 <h2 className="text-2xl font-bold mb-6 text-slate-800">How Carlos Works</h2>
                 <p className="text-slate-600 mb-6">
-                  Carlos is a small team of specialized cloud agents. Each one reviews your design from a different angle
-                  before a Chief Auditor gives the final verdict.
+                  Carlos is a team of specialized cloud agents working together. Two competing architects (Carlos and Ronei)
+                  draft designs in parallel, then specialist reviewers analyze both approaches before a final recommendation is made.
                 </p>
                 <div className="space-y-4">
                   <AgentInfo
@@ -786,8 +786,22 @@ export default function App() {
                     name="Chief Architecture Auditor"
                     description="Combines all prior reports and issues the final APPROVED / NEEDS REVISION verdict, with key strengths and required changes before go-live."
                   />
+                  <AgentInfo
+                    iconBg="bg-indigo-100"
+                    labelColor="text-indigo-700"
+                    icon={<Layout size={18} />}
+                    name="Design Recommender"
+                    description="Analyzes both Carlos' and Ronei's designs along with all specialist reports, then recommends which approach best fits your requirements. Provides detailed tradeoff analysis and explains when you might choose the alternative."
+                  />
                 </div>
-                <div className="mt-8 text-sm text-slate-500">
+                <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800 font-semibold mb-2">⚡ Parallel Execution</p>
+                  <p className="text-sm text-blue-700">
+                    Carlos and Ronei work simultaneously to draft their designs, cutting total execution time in half!
+                    Once both complete, specialist reviewers analyze the approaches sequentially.
+                  </p>
+                </div>
+                <div className="mt-4 text-sm text-slate-500">
                   Tip: Use the controls above the blueprint editor to choose a scenario and tune cost, compliance, and reliability. All agents will take these into account.
                 </div>
               </div>
