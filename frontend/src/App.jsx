@@ -859,6 +859,13 @@ export default function App() {
                     name="Terraform Coder"
                     description="Generates production-ready Terraform infrastructure-as-code for the recommended design. Creates modular HCL code with main.tf, variables.tf, outputs.tf, and versions.tf files, following IaC best practices."
                   />
+                  <AgentInfo
+                    iconBg="bg-orange-100"
+                    labelColor="text-orange-700"
+                    icon={<ShieldCheck size={18} />}
+                    name="Terraform Validator"
+                    description="Reviews the generated Terraform code for syntax, security issues, best practices, and completeness. Identifies hardcoded secrets, overly permissive rules, and cloud-specific anti-patterns before deployment."
+                  />
                 </div>
                 <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-sm text-blue-800 font-semibold mb-2">⚡ Parallel Execution</p>
