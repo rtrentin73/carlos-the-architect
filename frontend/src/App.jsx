@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity } from 'lucide-react';
 import Splash from './components/Splash';
 
 export default function App() {
@@ -14,7 +14,7 @@ export default function App() {
   const [reliabilityLevel, setReliabilityLevel] = useState("normal");
   const [strictnessLevel, setStrictnessLevel] = useState("balanced");
  
-  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
   const [design, setDesign] = useState("");
   const [roneiDesign, setRoneiDesign] = useState("");
   const [isDesigning, setIsDesigning] = useState(false);
@@ -30,6 +30,16 @@ export default function App() {
     const saved = localStorage.getItem("designHistory");
     return saved ? JSON.parse(saved) : [];
   });
+  const [activityLog, setActivityLog] = useState([]);
+  const [agentStatuses, setAgentStatuses] = useState({
+    design: 'pending',
+    ronei_design: 'pending',
+    security: 'pending',
+    cost: 'pending',
+    reliability: 'pending',
+    audit: 'pending',
+    recommender: 'pending'
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 3000);
@@ -40,10 +50,26 @@ export default function App() {
     switch (event.type) {
       case "agent_start":
         console.log(`🚀 Agent ${event.agent} started`);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'start',
+          agent: event.agent,
+          message: `Agent ${event.agent} started`,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+        setAgentStatuses(prev => ({ ...prev, [event.agent]: 'active' }));
         break;
 
       case "agent_complete":
         console.log(`✅ Agent ${event.agent} completed`);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'complete',
+          agent: event.agent,
+          message: `Agent ${event.agent} completed`,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+        setAgentStatuses(prev => ({ ...prev, [event.agent]: 'completed' }));
         break;
 
       case "token":
@@ -109,6 +135,13 @@ export default function App() {
       case "error":
         console.error("❌ Stream error:", event.message);
         setDesign(`Error: ${event.message}`);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'error',
+          agent: 'system',
+          message: `Error: ${event.message}`,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
         setIsDesigning(false);
         break;
     }
@@ -124,6 +157,16 @@ export default function App() {
     setAuditReport("");
     setAuditStatus("");
     setAgentChat("");
+    setActivityLog([]);
+    setAgentStatuses({
+      design: 'pending',
+      ronei_design: 'pending',
+      security: 'pending',
+      cost: 'pending',
+      reliability: 'pending',
+      audit: 'pending',
+      recommender: 'pending'
+    });
     setIsDesigning(true);
 
     console.log("=== Starting streaming design request ===");
@@ -271,6 +314,7 @@ export default function App() {
         </div>
         <nav className="space-y-4">
           <NavItem icon={<PenTool size={18}/>} label="New Blueprint" active={currentView === "blueprint"} onClick={() => setCurrentView("blueprint")} />
+          <NavItem icon={<Activity size={18}/>} label="Live Activity" active={currentView === "activity"} onClick={() => setCurrentView("activity")} />
           <NavItem icon={<Cloud size={18}/>} label="Cloud History" active={currentView === "history"} onClick={() => setCurrentView("history")} />
           <NavItem icon={<ShieldCheck size={18}/>} label="Security Audits" active={currentView === "audits"} onClick={() => setCurrentView("audits")} />
           <NavItem icon={<MessageCircle size={18}/>} label="Agent Chat" active={currentView === "agents"} onClick={() => setCurrentView("agents")} />
@@ -421,6 +465,88 @@ export default function App() {
                   </div>
                 )}
               </>
+            )}
+            {currentView === "activity" && (
+              <div>
+                <h2 className="text-2xl font-bold mb-6 text-slate-800 flex items-center gap-2">
+                  <Activity size={24} className="text-blue-600" />
+                  Live Activity Monitor
+                </h2>
+
+                {/* Agent Status Overview */}
+                <div className="mb-8">
+                  <h3 className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Agent Status</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {Object.entries(agentStatuses).map(([agent, status]) => (
+                      <div
+                        key={agent}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          status === 'active' ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-400 animate-pulse' :
+                          status === 'completed' ? 'bg-green-100 text-green-700' :
+                          'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${
+                            status === 'active' ? 'bg-blue-600' :
+                            status === 'completed' ? 'bg-green-600' :
+                            'bg-gray-400'
+                          }`}></div>
+                          <span className="capitalize">{agent.replace('_', ' ')}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Activity Log */}
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Activity Log</h3>
+                  {activityLog.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Activity size={48} className="mx-auto text-slate-300 mb-3" />
+                      <p className="text-slate-400 italic">
+                        {isDesigning ? 'Waiting for agent activity...' : 'No activity yet. Submit a design request to see real-time agent events.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto bg-slate-50 rounded-lg p-4">
+                      {activityLog.map((log) => (
+                        <div
+                          key={log.id}
+                          className={`flex items-start gap-3 p-3 rounded-lg ${
+                            log.type === 'start' ? 'bg-blue-50 border-l-4 border-blue-500' :
+                            log.type === 'complete' ? 'bg-green-50 border-l-4 border-green-500' :
+                            log.type === 'error' ? 'bg-red-50 border-l-4 border-red-500' :
+                            'bg-white border-l-4 border-gray-300'
+                          }`}
+                        >
+                          <div className="flex-shrink-0 mt-1">
+                            {log.type === 'start' && <span className="text-blue-600 text-xl">🚀</span>}
+                            {log.type === 'complete' && <span className="text-green-600 text-xl">✅</span>}
+                            {log.type === 'error' && <span className="text-red-600 text-xl">❌</span>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800">{log.message}</p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {new Date(log.timestamp).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Instructions */}
+                {!isDesigning && activityLog.length === 0 && (
+                  <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-sm text-blue-800">
+                      <strong>💡 Tip:</strong> Go to "New Blueprint" and submit a design request to see real-time agent activity here!
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
             {currentView === "history" && (
               <div>
