@@ -9,8 +9,10 @@ from tasks import (
     RELIABILITY_ENGINEER_INSTRUCTIONS,
     RONEI_INSTRUCTIONS,
     DESIGN_RECOMMENDER_INSTRUCTIONS,
+    TERRAFORM_CODER_INSTRUCTIONS,
 )
 import os
+import operator
 
 class CarlosState(TypedDict):
     requirements: str
@@ -19,10 +21,13 @@ class CarlosState(TypedDict):
     audit_status: str  # "pending", "approved", "needs_revision"
     audit_report: str
     recommendation: str
-    conversation: str  # running log of agent messages
+    conversation: Annotated[str, operator.add]  # running log of agent messages (concatenated when parallel)
     security_report: str
     cost_report: str
     reliability_report: str
+    design_tokens: list  # Token chunks from Carlos for streaming
+    ronei_tokens: list  # Token chunks from Ronei for streaming
+    terraform_code: str  # Generated Terraform infrastructure code
 
 # Create LLM with explicit env vars
 llm = AzureChatOpenAI(
@@ -91,12 +96,15 @@ async def carlos_design_node(state: CarlosState):
         f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
     )
     response = ""
+    tokens = []
     async for chunk in llm.astream(prompt):
-        response += chunk.content
+        token = chunk.content
+        response += token
+        tokens.append(token)
     print(f"Design response: {response}")
     convo = state.get("conversation", "")
     convo += "**Carlos:**\n" + response + "\n\n"
-    return {"design_doc": response, "audit_status": "pending", "conversation": convo}
+    return {"design_doc": response, "audit_status": "pending", "conversation": convo, "design_tokens": tokens}
 
 
 async def ronei_design_node(state: CarlosState):
@@ -142,12 +150,15 @@ async def ronei_design_node(state: CarlosState):
         f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
     )
     response = ""
+    tokens = []
     async for chunk in ronei_llm.astream(prompt):
-        response += chunk.content
+        token = chunk.content
+        response += token
+        tokens.append(token)
     print(f"Ronei design response: {response}")
     convo = state.get("conversation", "")
     convo += "**Ronei:**\n" + response + "\n\n"
-    return {"ronei_design": response, "conversation": convo}
+    return {"ronei_design": response, "conversation": convo, "ronei_tokens": tokens}
 
 
 async def security_node(state: CarlosState):
@@ -234,6 +245,28 @@ async def recommender_node(state: CarlosState):
     convo += "**Design Recommender:**\n" + content + "\n\n"
     return {"recommendation": content, "conversation": convo}
 
+
+async def terraform_coder_node(state: CarlosState):
+    """Generate Terraform code for the recommended design."""
+    # Determine which design was recommended
+    recommendation = state.get("recommendation", "")
+    recommended_design = state.get("design_doc", "")  # Default to Carlos
+
+    if "RECOMMEND: RONEI" in recommendation.upper():
+        recommended_design = state.get("ronei_design", "")
+
+    prompt = (
+        f"{TERRAFORM_CODER_INSTRUCTIONS}\n\n"
+        f"=== User Requirements ===\n{state['requirements']}\n\n"
+        f"=== Recommended Design ===\n{recommended_design}\n\n"
+        f"=== Design Recommendation ===\n{recommendation}\n\n"
+        f"Please generate production-ready Terraform code for this architecture."
+    )
+    response = await llm.ainvoke(prompt)
+    convo = state.get("conversation", "")
+    convo += "**Terraform Coder:**\n" + response.content + "\n\n"
+    return {"terraform_code": response.content, "conversation": convo}
+
 # Build graph
 builder = StateGraph(CarlosState)
 builder.add_node("design", carlos_design_node)
@@ -243,9 +276,14 @@ builder.add_node("cost", cost_node)
 builder.add_node("reliability", reliability_node)
 builder.add_node("audit", auditor_node)
 builder.add_node("recommender", recommender_node)
+builder.add_node("terraform_coder", terraform_coder_node)
 
+# Run Carlos and Ronei in parallel for faster execution
 builder.add_edge(START, "design")
-builder.add_edge("design", "ronei_design")
+builder.add_edge(START, "ronei_design")
+
+# Security waits for both designs to complete, then other specialists run sequentially
+builder.add_edge("design", "security")
 builder.add_edge("ronei_design", "security")
 builder.add_edge("security", "cost")
 builder.add_edge("cost", "reliability")
@@ -256,6 +294,7 @@ builder.add_conditional_edges(
     lambda x: "recommender" if x["audit_status"] == "approved" else "design",
 )
 
-builder.add_edge("recommender", END)
+builder.add_edge("recommender", "terraform_coder")
+builder.add_edge("terraform_coder", END)
 
 carlos_graph = builder.compile()

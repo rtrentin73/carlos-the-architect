@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity } from 'lucide-react';
 import Splash from './components/Splash';
 
 export default function App() {
@@ -14,7 +14,7 @@ export default function App() {
   const [reliabilityLevel, setReliabilityLevel] = useState("normal");
   const [strictnessLevel, setStrictnessLevel] = useState("balanced");
  
-  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
   const [design, setDesign] = useState("");
   const [roneiDesign, setRoneiDesign] = useState("");
   const [isDesigning, setIsDesigning] = useState(false);
@@ -23,6 +23,8 @@ export default function App() {
   const [securityReport, setSecurityReport] = useState("");
   const [costReport, setCostReport] = useState("");
   const [reliabilityReport, setReliabilityReport] = useState("");
+  const [recommendation, setRecommendation] = useState("");
+  const [terraformCode, setTerraformCode] = useState("");
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
   const [blueprintTab, setBlueprintTab] = useState("carlos");
@@ -30,20 +32,235 @@ export default function App() {
     const saved = localStorage.getItem("designHistory");
     return saved ? JSON.parse(saved) : [];
   });
+  const [activityLog, setActivityLog] = useState([]);
+  const [agentStatuses, setAgentStatuses] = useState({
+    design: 'pending',
+    ronei_design: 'pending',
+    security: 'pending',
+    cost: 'pending',
+    reliability: 'pending',
+    audit: 'pending',
+    recommender: 'pending',
+    terraform_coder: 'pending'
+  });
+  const [tokenCounts, setTokenCounts] = useState({
+    carlos: 0,
+    ronei_design: 0
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, []);
 
+  const handleStreamEvent = (event) => {
+    const agentDescriptions = {
+      design: 'Carlos (Lead Cloud Architect) - Designing cloud infrastructure',
+      ronei_design: 'Ronei (Rival Architect) - Creating alternative modern design',
+      security: 'Security Analyst - Reviewing security posture',
+      cost: 'Cost Optimization Specialist - Analyzing cost efficiency',
+      reliability: 'SRE - Evaluating reliability and operations',
+      audit: 'Chief Auditor - Performing final audit review',
+      recommender: 'Design Recommender - Choosing best design approach',
+      terraform_coder: 'Terraform Coder - Generating infrastructure-as-code'
+    };
+
+    switch (event.type) {
+      case "agent_start":
+        console.log(`🚀 Agent ${event.agent} started`);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'start',
+          agent: event.agent,
+          message: agentDescriptions[event.agent] || `Agent ${event.agent} started`,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+        setAgentStatuses(prev => ({ ...prev, [event.agent]: 'active' }));
+        break;
+
+      case "agent_complete":
+        console.log(`✅ Agent ${event.agent} completed`);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'complete',
+          agent: event.agent,
+          message: `${event.agent} completed successfully`,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+        setAgentStatuses(prev => ({ ...prev, [event.agent]: 'completed' }));
+        break;
+
+      case "token":
+        if (event.agent === "carlos") {
+          setDesign(prev => prev + event.content);
+          setTokenCounts(prev => ({ ...prev, carlos: prev.carlos + 1 }));
+
+          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
+          setTokenCounts(prev => {
+            const newCount = prev.carlos + 1;
+            if (newCount % 50 === 0) {
+              setActivityLog(activityPrev => [...activityPrev, {
+                id: Date.now() + Math.random(),
+                type: 'streaming',
+                agent: 'carlos',
+                message: `Carlos streaming design... (${newCount} tokens)`,
+                timestamp: event.timestamp || new Date().toISOString()
+              }]);
+            }
+            return { ...prev, carlos: newCount };
+          });
+        } else if (event.agent === "ronei_design") {
+          setRoneiDesign(prev => prev + event.content);
+          setTokenCounts(prev => ({ ...prev, ronei_design: prev.ronei_design + 1 }));
+
+          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
+          setTokenCounts(prev => {
+            const newCount = prev.ronei_design + 1;
+            if (newCount % 50 === 0) {
+              setActivityLog(activityPrev => [...activityPrev, {
+                id: Date.now() + Math.random(),
+                type: 'streaming',
+                agent: 'ronei_design',
+                message: `Ronei streaming design... (${newCount} tokens)`,
+                timestamp: event.timestamp || new Date().toISOString()
+              }]);
+            }
+            return { ...prev, ronei_design: newCount };
+          });
+        }
+        break;
+
+      case "field_update":
+        const fieldLabels = {
+          security_report: 'Security Analysis Report',
+          cost_report: 'Cost Optimization Report',
+          reliability_report: 'Reliability & Operations Report',
+          audit_report: 'Chief Auditor Verdict',
+          audit_status: 'Audit Status',
+          recommendation: 'Design Recommendation',
+          terraform_code: 'Terraform Infrastructure Code'
+        };
+
+        // Add to activity log
+        const preview = event.content ? event.content.substring(0, 150) + '...' : '';
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'report',
+          agent: event.field,
+          message: `${fieldLabels[event.field] || event.field} generated`,
+          detail: preview,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+
+        // Update state
+        switch (event.field) {
+          case "security_report":
+            setSecurityReport(event.content);
+            break;
+          case "cost_report":
+            setCostReport(event.content);
+            break;
+          case "reliability_report":
+            setReliabilityReport(event.content);
+            break;
+          case "audit_report":
+            setAuditReport(event.content);
+            break;
+          case "audit_status":
+            setAuditStatus(event.content);
+            break;
+          case "recommendation":
+            setRecommendation(event.content);
+            console.log("Recommendation received:", event.content);
+            break;
+          case "terraform_code":
+            setTerraformCode(event.content);
+            console.log("Terraform code generated");
+            break;
+        }
+        break;
+
+      case "complete":
+        console.log("🎉 Design generation complete!");
+        const summary = event.summary;
+
+        // Save to history
+        const newEntry = {
+          id: Date.now(),
+          requirements: input,
+          scenario,
+          costPerformance,
+          complianceLevel,
+          reliabilityLevel,
+          strictnessLevel,
+          design: summary.design,
+          roneiDesign: summary.ronei_design || "",
+          auditStatus: summary.audit_status || "",
+          auditReport: summary.audit_report || "",
+          securityReport: summary.security_report || "",
+          costReport: summary.cost_report || "",
+          reliabilityReport: summary.reliability_report || "",
+          recommendation: summary.recommendation || "",
+          terraformCode: summary.terraform_code || "",
+          agentChat: summary.agent_chat || "",
+          timestamp: new Date().toLocaleString()
+        };
+        const updatedHistory = [newEntry, ...history];
+        setHistory(updatedHistory);
+        localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
+        setAgentChat(summary.agent_chat || "");
+        break;
+
+      case "error":
+        console.error("❌ Stream error:", event.message);
+        setDesign(`Error: ${event.message}`);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'error',
+          agent: 'system',
+          message: `Error: ${event.message}`,
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+        setIsDesigning(false);
+        break;
+    }
+  };
+
   const handleAskCarlos = async () => {
+    // Reset all state
     setDesign("");
+    setRoneiDesign("");
+    setSecurityReport("");
+    setCostReport("");
+    setReliabilityReport("");
+    setAuditReport("");
+    setAuditStatus("");
+    setRecommendation("");
+    setTerraformCode("");
+    setAgentChat("");
+    setActivityLog([]);
+    setAgentStatuses({
+      design: 'pending',
+      ronei_design: 'pending',
+      security: 'pending',
+      cost: 'pending',
+      reliability: 'pending',
+      audit: 'pending',
+      recommender: 'pending',
+      terraform_coder: 'pending'
+    });
+    setTokenCounts({
+      carlos: 0,
+      ronei_design: 0
+    });
     setIsDesigning(true);
-    console.log("=== Starting design request ===");
+
+    console.log("=== Starting streaming design request ===");
     console.log("Input:", input);
+
     try {
-      console.log(`Fetching from ${backendBaseUrl}/design`);
-      const response = await fetch(`${backendBaseUrl}/design`, {
+      console.log(`Streaming from ${backendBaseUrl}/design-stream`);
+      const response = await fetch(`${backendBaseUrl}/design-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -57,53 +274,43 @@ export default function App() {
           },
         }),
       });
+
       console.log("Response status:", response.status);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data = await response.json();
-      console.log("Response data:", data);
-      
-      if (data.error) {
-        console.log("Error from backend:", data.error);
-        setDesign(`Error: ${data.error}`);
-      } else if (data.design) {
-        console.log("Design received, length:", data.design.length);
-        setDesign(data.design);
-        setRoneiDesign(data.ronei_design || "");
-        setAuditStatus(data.audit_status || "");
-        setAuditReport(data.audit_report || "");
-        setSecurityReport(data.security_report || "");
-        setCostReport(data.cost_report || "");
-        setReliabilityReport(data.reliability_report || "");
-        setAgentChat(data.agent_chat || "");
-        
-        // Save to history
-        const newEntry = {
-          id: Date.now(),
-          requirements: input,
-          scenario,
-          costPerformance,
-          complianceLevel,
-          reliabilityLevel,
-          strictnessLevel,
-          design: data.design,
-          roneiDesign: data.ronei_design || "",
-          auditStatus: data.audit_status || "",
-          auditReport: data.audit_report || "",
-          securityReport: data.security_report || "",
-          costReport: data.cost_report || "",
-          reliabilityReport: data.reliability_report || "",
-          agentChat: data.agent_chat || "",
-          timestamp: new Date().toLocaleString()
-        };
-        const updatedHistory = [newEntry, ...history];
-        setHistory(updatedHistory);
-        localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
-        console.log("Saved to history");
+
+      // Read SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+
+        // Keep incomplete line in buffer
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.substring(6).trim();
+            if (jsonStr === "") continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              handleStreamEvent(event);
+            } catch (e) {
+              console.error("Failed to parse SSE event:", e, jsonStr);
+            }
+          }
+        }
       }
     } catch (error) {
-      console.error("Error fetching design:", error);
+      console.error("Error streaming design:", error);
       setDesign("Error: Unable to generate design. Please check the backend and try again.");
     } finally {
       setIsDesigning(false);
@@ -164,6 +371,14 @@ export default function App() {
       "",
       auditReport || "_No final audit verdict generated._",
       "",
+      "## Design Recommendation",
+      "",
+      recommendation || "_No recommendation generated._",
+      "",
+      "## Terraform Infrastructure Code",
+      "",
+      terraformCode || "_No Terraform code generated._",
+      "",
       "## Agent Conversation",
       "",
       agentChat || "_No agent conversation captured._",
@@ -193,6 +408,7 @@ export default function App() {
         </div>
         <nav className="space-y-4">
           <NavItem icon={<PenTool size={18}/>} label="New Blueprint" active={currentView === "blueprint"} onClick={() => setCurrentView("blueprint")} />
+          <NavItem icon={<Activity size={18}/>} label="Live Activity" active={currentView === "activity"} onClick={() => setCurrentView("activity")} />
           <NavItem icon={<Cloud size={18}/>} label="Cloud History" active={currentView === "history"} onClick={() => setCurrentView("history")} />
           <NavItem icon={<ShieldCheck size={18}/>} label="Security Audits" active={currentView === "audits"} onClick={() => setCurrentView("audits")} />
           <NavItem icon={<MessageCircle size={18}/>} label="Agent Chat" active={currentView === "agents"} onClick={() => setCurrentView("agents")} />
@@ -293,10 +509,10 @@ export default function App() {
                 {design || roneiDesign ? (
                   <div>
                     {/* Design Tabs */}
-                    <div className="flex border-b border-slate-200 mb-6">
+                    <div className="flex border-b border-slate-200 mb-6 overflow-x-auto">
                       <button
                         onClick={() => setBlueprintTab("carlos")}
-                        className={`px-4 py-2 font-medium text-sm ${
+                        className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
                           blueprintTab === "carlos"
                             ? "border-b-2 border-blue-500 text-blue-600"
                             : "text-slate-500 hover:text-slate-700"
@@ -306,7 +522,7 @@ export default function App() {
                       </button>
                       <button
                         onClick={() => setBlueprintTab("ronei")}
-                        className={`px-4 py-2 font-medium text-sm ${
+                        className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
                           blueprintTab === "ronei"
                             ? "border-b-2 border-purple-500 text-purple-600"
                             : "text-slate-500 hover:text-slate-700"
@@ -314,14 +530,48 @@ export default function App() {
                       >
                         Ronei's Design
                       </button>
+                      {recommendation && (
+                        <button
+                          onClick={() => setBlueprintTab("recommendation")}
+                          className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
+                            blueprintTab === "recommendation"
+                              ? "border-b-2 border-indigo-500 text-indigo-600"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Recommendation
+                        </button>
+                      )}
+                      {terraformCode && (
+                        <button
+                          onClick={() => setBlueprintTab("terraform")}
+                          className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
+                            blueprintTab === "terraform"
+                              ? "border-b-2 border-green-500 text-green-600"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Terraform Code
+                        </button>
+                      )}
                     </div>
-                    
+
                     {/* Design Content */}
                     {blueprintTab === "carlos" && design && (
                       <BlueprintWithDiagram design={design} />
                     )}
                     {blueprintTab === "ronei" && roneiDesign && (
                       <BlueprintWithDiagram design={roneiDesign} />
+                    )}
+                    {blueprintTab === "recommendation" && recommendation && (
+                      <div className="prose prose-slate max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{recommendation}</ReactMarkdown>
+                      </div>
+                    )}
+                    {blueprintTab === "terraform" && terraformCode && (
+                      <div className="prose prose-slate max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{terraformCode}</ReactMarkdown>
+                      </div>
                     )}
                     {blueprintTab === "carlos" && !design && (
                       <div className="h-full flex flex-col items-center justify-center text-slate-300">
@@ -343,6 +593,97 @@ export default function App() {
                   </div>
                 )}
               </>
+            )}
+            {currentView === "activity" && (
+              <div>
+                <h2 className="text-2xl font-bold mb-6 text-slate-800 flex items-center gap-2">
+                  <Activity size={24} className="text-blue-600" />
+                  Live Activity Monitor
+                </h2>
+
+                {/* Agent Status Overview */}
+                <div className="mb-8">
+                  <h3 className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Agent Status</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {Object.entries(agentStatuses).map(([agent, status]) => (
+                      <div
+                        key={agent}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          status === 'active' ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-400 animate-pulse' :
+                          status === 'completed' ? 'bg-green-100 text-green-700' :
+                          'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${
+                            status === 'active' ? 'bg-blue-600' :
+                            status === 'completed' ? 'bg-green-600' :
+                            'bg-gray-400'
+                          }`}></div>
+                          <span className="capitalize">{agent.replace('_', ' ')}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Activity Log */}
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Activity Log</h3>
+                  {activityLog.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Activity size={48} className="mx-auto text-slate-300 mb-3" />
+                      <p className="text-slate-400 italic">
+                        {isDesigning ? 'Waiting for agent activity...' : 'No activity yet. Submit a design request to see real-time agent events.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-96 overflow-y-auto bg-slate-50 rounded-lg p-4">
+                      {activityLog.map((log) => (
+                        <div
+                          key={log.id}
+                          className={`flex items-start gap-3 p-3 rounded-lg ${
+                            log.type === 'start' ? 'bg-blue-50 border-l-4 border-blue-500' :
+                            log.type === 'complete' ? 'bg-green-50 border-l-4 border-green-500' :
+                            log.type === 'report' ? 'bg-purple-50 border-l-4 border-purple-500' :
+                            log.type === 'streaming' ? 'bg-cyan-50 border-l-4 border-cyan-500' :
+                            log.type === 'error' ? 'bg-red-50 border-l-4 border-red-500' :
+                            'bg-white border-l-4 border-gray-300'
+                          }`}
+                        >
+                          <div className="flex-shrink-0 mt-1">
+                            {log.type === 'start' && <span className="text-blue-600 text-xl">🚀</span>}
+                            {log.type === 'complete' && <span className="text-green-600 text-xl">✅</span>}
+                            {log.type === 'report' && <span className="text-purple-600 text-xl">📄</span>}
+                            {log.type === 'streaming' && <span className="text-cyan-600 text-xl">⚡</span>}
+                            {log.type === 'error' && <span className="text-red-600 text-xl">❌</span>}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800">{log.message}</p>
+                            {log.detail && (
+                              <p className="text-xs text-slate-600 mt-2 p-2 bg-white rounded border border-slate-200 italic">
+                                {log.detail}
+                              </p>
+                            )}
+                            <p className="text-xs text-slate-500 mt-1">
+                              {new Date(log.timestamp).toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Instructions */}
+                {!isDesigning && activityLog.length === 0 && (
+                  <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-sm text-blue-800">
+                      <strong>💡 Tip:</strong> Go to "New Blueprint" and submit a design request to see real-time agent activity here!
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
             {currentView === "history" && (
               <div>
@@ -370,6 +711,8 @@ export default function App() {
                           setSecurityReport(entry.securityReport || "");
                           setCostReport(entry.costReport || "");
                           setReliabilityReport(entry.reliabilityReport || "");
+                          setRecommendation(entry.recommendation || "");
+                          setTerraformCode(entry.terraformCode || "");
                           setAgentChat(entry.agentChat || "");
                         }}
                       >
@@ -456,8 +799,8 @@ export default function App() {
               <div>
                 <h2 className="text-2xl font-bold mb-6 text-slate-800">How Carlos Works</h2>
                 <p className="text-slate-600 mb-6">
-                  Carlos is a small team of specialized cloud agents. Each one reviews your design from a different angle
-                  before a Chief Auditor gives the final verdict.
+                  Carlos is a team of specialized cloud agents working together. Two competing architects (Carlos and Ronei)
+                  draft designs in parallel, then specialist reviewers analyze both approaches before a final recommendation is made.
                 </p>
                 <div className="space-y-4">
                   <AgentInfo
@@ -502,8 +845,29 @@ export default function App() {
                     name="Chief Architecture Auditor"
                     description="Combines all prior reports and issues the final APPROVED / NEEDS REVISION verdict, with key strengths and required changes before go-live."
                   />
+                  <AgentInfo
+                    iconBg="bg-indigo-100"
+                    labelColor="text-indigo-700"
+                    icon={<Layout size={18} />}
+                    name="Design Recommender"
+                    description="Analyzes both Carlos' and Ronei's designs along with all specialist reports, then recommends which approach best fits your requirements. Provides detailed tradeoff analysis and explains when you might choose the alternative."
+                  />
+                  <AgentInfo
+                    iconBg="bg-green-100"
+                    labelColor="text-green-700"
+                    icon={<Cloud size={18} />}
+                    name="Terraform Coder"
+                    description="Generates production-ready Terraform infrastructure-as-code for the recommended design. Creates modular HCL code with main.tf, variables.tf, outputs.tf, and versions.tf files, following IaC best practices."
+                  />
                 </div>
-                <div className="mt-8 text-sm text-slate-500">
+                <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800 font-semibold mb-2">⚡ Parallel Execution</p>
+                  <p className="text-sm text-blue-700">
+                    Carlos and Ronei work simultaneously to draft their designs, cutting total execution time in half!
+                    Once both complete, specialist reviewers analyze the approaches sequentially.
+                  </p>
+                </div>
+                <div className="mt-4 text-sm text-slate-500">
                   Tip: Use the controls above the blueprint editor to choose a scenario and tune cost, compliance, and reliability. All agents will take these into account.
                 </div>
               </div>
