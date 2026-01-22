@@ -41,7 +41,8 @@ export default function App() {
     reliability: 'pending',
     audit: 'pending',
     recommender: 'pending',
-    terraform_coder: 'pending'
+    terraform_coder: 'pending',
+    terraform_validator: 'pending'
   });
   const [tokenCounts, setTokenCounts] = useState({
     carlos: 0,
@@ -62,7 +63,8 @@ export default function App() {
       reliability: 'SRE - Evaluating reliability and operations',
       audit: 'Chief Auditor - Performing final audit review',
       recommender: 'Design Recommender - Choosing best design approach',
-      terraform_coder: 'Terraform Coder - Generating infrastructure-as-code'
+      terraform_coder: 'Terraform Coder - Generating infrastructure-as-code',
+      terraform_validator: 'Terraform Validator - Reviewing infrastructure code'
     };
 
     switch (event.type) {
@@ -247,7 +249,8 @@ export default function App() {
       reliability: 'pending',
       audit: 'pending',
       recommender: 'pending',
-      terraform_coder: 'pending'
+      terraform_coder: 'pending',
+      terraform_validator: 'pending'
     });
     setTokenCounts({
       carlos: 0,
