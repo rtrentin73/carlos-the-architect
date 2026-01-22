@@ -252,8 +252,12 @@ builder.add_node("reliability", reliability_node)
 builder.add_node("audit", auditor_node)
 builder.add_node("recommender", recommender_node)
 
+# Run Carlos and Ronei in parallel for faster execution
 builder.add_edge(START, "design")
-builder.add_edge("design", "ronei_design")
+builder.add_edge(START, "ronei_design")
+
+# Security waits for both designs to complete, then other specialists run sequentially
+builder.add_edge("design", "security")
 builder.add_edge("ronei_design", "security")
 builder.add_edge("security", "cost")
 builder.add_edge("cost", "reliability")
