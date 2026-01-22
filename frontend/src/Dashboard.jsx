@@ -11,6 +11,8 @@ export default function Dashboard() {
   const [debugLog, setDebugLog] = useState([]);
   const [showDebug, setShowDebug] = useState(true);
 
+  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
+
   // Splash screen effect
   useEffect(() => {
     const timer = setTimeout(() => setLoading(false), 3000);
@@ -35,7 +37,7 @@ export default function Dashboard() {
     addLog('INFO', '📤 Sending request to Carlos...', { requirements: input });
 
     try {
-      const response = await fetch("http://localhost:8000/design", {
+      const response = await fetch(`${backendBaseUrl}/design`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requirements: input }),

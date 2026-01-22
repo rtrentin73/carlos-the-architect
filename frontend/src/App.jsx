@@ -13,6 +13,8 @@ export default function App() {
   const [complianceLevel, setComplianceLevel] = useState("standard");
   const [reliabilityLevel, setReliabilityLevel] = useState("normal");
   const [strictnessLevel, setStrictnessLevel] = useState("balanced");
+ 
+  const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
   const [design, setDesign] = useState("");
   const [roneiDesign, setRoneiDesign] = useState("");
   const [isDesigning, setIsDesigning] = useState(false);
@@ -40,8 +42,8 @@ export default function App() {
     console.log("=== Starting design request ===");
     console.log("Input:", input);
     try {
-      console.log("Fetching from http://localhost:8000/design");
-      const response = await fetch("http://localhost:8000/design", {
+      console.log(`Fetching from ${backendBaseUrl}/design`);
+      const response = await fetch(`${backendBaseUrl}/design`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

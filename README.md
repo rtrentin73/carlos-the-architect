@@ -48,6 +48,23 @@
 
 ---
 
+## Changelog & Releases
+
+This project maintains a `CHANGELOG.md` using the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+Changelog updates and GitHub Releases are automated using **Release Please**:
+
+- On every push to `main`, Release Please will open (or update) a **release PR** that updates `CHANGELOG.md` and bumps the release version.
+- When you merge the release PR, Release Please will create a **git tag** and a **GitHub Release** automatically.
+
+To ensure changes are categorized correctly, use **Conventional Commits** in your commit messages or PR titles, for example:
+
+- `feat: add new scenario presets`
+- `fix: handle missing Azure OpenAI env vars`
+- `chore: update dependencies`
+
+---
+
 ## Prerequisites
 
 - **Python** 3.9+ (virtualenv recommended)
