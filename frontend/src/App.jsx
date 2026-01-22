@@ -36,14 +36,102 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  const handleStreamEvent = (event) => {
+    switch (event.type) {
+      case "agent_start":
+        console.log(`🚀 Agent ${event.agent} started`);
+        break;
+
+      case "agent_complete":
+        console.log(`✅ Agent ${event.agent} completed`);
+        break;
+
+      case "token":
+        if (event.agent === "carlos") {
+          setDesign(prev => prev + event.content);
+        } else if (event.agent === "ronei_design") {
+          setRoneiDesign(prev => prev + event.content);
+        }
+        break;
+
+      case "field_update":
+        switch (event.field) {
+          case "security_report":
+            setSecurityReport(event.content);
+            break;
+          case "cost_report":
+            setCostReport(event.content);
+            break;
+          case "reliability_report":
+            setReliabilityReport(event.content);
+            break;
+          case "audit_report":
+            setAuditReport(event.content);
+            break;
+          case "audit_status":
+            setAuditStatus(event.content);
+            break;
+          case "recommendation":
+            console.log("Recommendation received:", event.content);
+            break;
+        }
+        break;
+
+      case "complete":
+        console.log("🎉 Design generation complete!");
+        const summary = event.summary;
+
+        // Save to history
+        const newEntry = {
+          id: Date.now(),
+          requirements: input,
+          scenario,
+          costPerformance,
+          complianceLevel,
+          reliabilityLevel,
+          strictnessLevel,
+          design: summary.design,
+          roneiDesign: summary.ronei_design || "",
+          auditStatus: summary.audit_status || "",
+          auditReport: summary.audit_report || "",
+          securityReport: summary.security_report || "",
+          costReport: summary.cost_report || "",
+          reliabilityReport: summary.reliability_report || "",
+          agentChat: summary.agent_chat || "",
+          timestamp: new Date().toLocaleString()
+        };
+        const updatedHistory = [newEntry, ...history];
+        setHistory(updatedHistory);
+        localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
+        setAgentChat(summary.agent_chat || "");
+        break;
+
+      case "error":
+        console.error("❌ Stream error:", event.message);
+        setDesign(`Error: ${event.message}`);
+        setIsDesigning(false);
+        break;
+    }
+  };
+
   const handleAskCarlos = async () => {
+    // Reset all state
     setDesign("");
+    setRoneiDesign("");
+    setSecurityReport("");
+    setCostReport("");
+    setReliabilityReport("");
+    setAuditReport("");
+    setAuditStatus("");
+    setAgentChat("");
     setIsDesigning(true);
-    console.log("=== Starting design request ===");
+
+    console.log("=== Starting streaming design request ===");
     console.log("Input:", input);
+
     try {
-      console.log(`Fetching from ${backendBaseUrl}/design`);
-      const response = await fetch(`${backendBaseUrl}/design`, {
+      console.log(`Streaming from ${backendBaseUrl}/design-stream`);
+      const response = await fetch(`${backendBaseUrl}/design-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -57,53 +145,43 @@ export default function App() {
           },
         }),
       });
+
       console.log("Response status:", response.status);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const data = await response.json();
-      console.log("Response data:", data);
-      
-      if (data.error) {
-        console.log("Error from backend:", data.error);
-        setDesign(`Error: ${data.error}`);
-      } else if (data.design) {
-        console.log("Design received, length:", data.design.length);
-        setDesign(data.design);
-        setRoneiDesign(data.ronei_design || "");
-        setAuditStatus(data.audit_status || "");
-        setAuditReport(data.audit_report || "");
-        setSecurityReport(data.security_report || "");
-        setCostReport(data.cost_report || "");
-        setReliabilityReport(data.reliability_report || "");
-        setAgentChat(data.agent_chat || "");
-        
-        // Save to history
-        const newEntry = {
-          id: Date.now(),
-          requirements: input,
-          scenario,
-          costPerformance,
-          complianceLevel,
-          reliabilityLevel,
-          strictnessLevel,
-          design: data.design,
-          roneiDesign: data.ronei_design || "",
-          auditStatus: data.audit_status || "",
-          auditReport: data.audit_report || "",
-          securityReport: data.security_report || "",
-          costReport: data.cost_report || "",
-          reliabilityReport: data.reliability_report || "",
-          agentChat: data.agent_chat || "",
-          timestamp: new Date().toLocaleString()
-        };
-        const updatedHistory = [newEntry, ...history];
-        setHistory(updatedHistory);
-        localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
-        console.log("Saved to history");
+
+      // Read SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+
+        // Keep incomplete line in buffer
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.substring(6).trim();
+            if (jsonStr === "") continue;
+
+            try {
+              const event = JSON.parse(jsonStr);
+              handleStreamEvent(event);
+            } catch (e) {
+              console.error("Failed to parse SSE event:", e, jsonStr);
+            }
+          }
+        }
       }
     } catch (error) {
-      console.error("Error fetching design:", error);
+      console.error("Error streaming design:", error);
       setDesign("Error: Unable to generate design. Please check the backend and try again.");
     } finally {
       setIsDesigning(false);

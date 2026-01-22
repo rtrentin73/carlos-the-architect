@@ -23,6 +23,8 @@ class CarlosState(TypedDict):
     security_report: str
     cost_report: str
     reliability_report: str
+    design_tokens: list  # Token chunks from Carlos for streaming
+    ronei_tokens: list  # Token chunks from Ronei for streaming
 
 # Create LLM with explicit env vars
 llm = AzureChatOpenAI(
@@ -91,12 +93,15 @@ async def carlos_design_node(state: CarlosState):
         f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
     )
     response = ""
+    tokens = []
     async for chunk in llm.astream(prompt):
-        response += chunk.content
+        token = chunk.content
+        response += token
+        tokens.append(token)
     print(f"Design response: {response}")
     convo = state.get("conversation", "")
     convo += "**Carlos:**\n" + response + "\n\n"
-    return {"design_doc": response, "audit_status": "pending", "conversation": convo}
+    return {"design_doc": response, "audit_status": "pending", "conversation": convo, "design_tokens": tokens}
 
 
 async def ronei_design_node(state: CarlosState):
@@ -142,12 +147,15 @@ async def ronei_design_node(state: CarlosState):
         f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
     )
     response = ""
+    tokens = []
     async for chunk in ronei_llm.astream(prompt):
-        response += chunk.content
+        token = chunk.content
+        response += token
+        tokens.append(token)
     print(f"Ronei design response: {response}")
     convo = state.get("conversation", "")
     convo += "**Ronei:**\n" + response + "\n\n"
-    return {"ronei_design": response, "conversation": convo}
+    return {"ronei_design": response, "conversation": convo, "ronei_tokens": tokens}
 
 
 async def security_node(state: CarlosState):
