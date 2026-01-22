@@ -23,6 +23,8 @@ export default function App() {
   const [securityReport, setSecurityReport] = useState("");
   const [costReport, setCostReport] = useState("");
   const [reliabilityReport, setReliabilityReport] = useState("");
+  const [recommendation, setRecommendation] = useState("");
+  const [terraformCode, setTerraformCode] = useState("");
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
   const [blueprintTab, setBlueprintTab] = useState("carlos");
@@ -38,7 +40,8 @@ export default function App() {
     cost: 'pending',
     reliability: 'pending',
     audit: 'pending',
-    recommender: 'pending'
+    recommender: 'pending',
+    terraform_coder: 'pending'
   });
   const [tokenCounts, setTokenCounts] = useState({
     carlos: 0,
@@ -58,7 +61,8 @@ export default function App() {
       cost: 'Cost Optimization Specialist - Analyzing cost efficiency',
       reliability: 'SRE - Evaluating reliability and operations',
       audit: 'Chief Auditor - Performing final audit review',
-      recommender: 'Design Recommender - Choosing best design approach'
+      recommender: 'Design Recommender - Choosing best design approach',
+      terraform_coder: 'Terraform Coder - Generating infrastructure-as-code'
     };
 
     switch (event.type) {
@@ -133,7 +137,8 @@ export default function App() {
           reliability_report: 'Reliability & Operations Report',
           audit_report: 'Chief Auditor Verdict',
           audit_status: 'Audit Status',
-          recommendation: 'Design Recommendation'
+          recommendation: 'Design Recommendation',
+          terraform_code: 'Terraform Infrastructure Code'
         };
 
         // Add to activity log
@@ -165,7 +170,12 @@ export default function App() {
             setAuditStatus(event.content);
             break;
           case "recommendation":
+            setRecommendation(event.content);
             console.log("Recommendation received:", event.content);
+            break;
+          case "terraform_code":
+            setTerraformCode(event.content);
+            console.log("Terraform code generated");
             break;
         }
         break;
@@ -190,6 +200,8 @@ export default function App() {
           securityReport: summary.security_report || "",
           costReport: summary.cost_report || "",
           reliabilityReport: summary.reliability_report || "",
+          recommendation: summary.recommendation || "",
+          terraformCode: summary.terraform_code || "",
           agentChat: summary.agent_chat || "",
           timestamp: new Date().toLocaleString()
         };
@@ -223,6 +235,8 @@ export default function App() {
     setReliabilityReport("");
     setAuditReport("");
     setAuditStatus("");
+    setRecommendation("");
+    setTerraformCode("");
     setAgentChat("");
     setActivityLog([]);
     setAgentStatuses({
@@ -232,7 +246,8 @@ export default function App() {
       cost: 'pending',
       reliability: 'pending',
       audit: 'pending',
-      recommender: 'pending'
+      recommender: 'pending',
+      terraform_coder: 'pending'
     });
     setTokenCounts({
       carlos: 0,
@@ -355,6 +370,14 @@ export default function App() {
       "## Chief Auditor Verdict",
       "",
       auditReport || "_No final audit verdict generated._",
+      "",
+      "## Design Recommendation",
+      "",
+      recommendation || "_No recommendation generated._",
+      "",
+      "## Terraform Infrastructure Code",
+      "",
+      terraformCode || "_No Terraform code generated._",
       "",
       "## Agent Conversation",
       "",
@@ -486,10 +509,10 @@ export default function App() {
                 {design || roneiDesign ? (
                   <div>
                     {/* Design Tabs */}
-                    <div className="flex border-b border-slate-200 mb-6">
+                    <div className="flex border-b border-slate-200 mb-6 overflow-x-auto">
                       <button
                         onClick={() => setBlueprintTab("carlos")}
-                        className={`px-4 py-2 font-medium text-sm ${
+                        className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
                           blueprintTab === "carlos"
                             ? "border-b-2 border-blue-500 text-blue-600"
                             : "text-slate-500 hover:text-slate-700"
@@ -499,7 +522,7 @@ export default function App() {
                       </button>
                       <button
                         onClick={() => setBlueprintTab("ronei")}
-                        className={`px-4 py-2 font-medium text-sm ${
+                        className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
                           blueprintTab === "ronei"
                             ? "border-b-2 border-purple-500 text-purple-600"
                             : "text-slate-500 hover:text-slate-700"
@@ -507,14 +530,48 @@ export default function App() {
                       >
                         Ronei's Design
                       </button>
+                      {recommendation && (
+                        <button
+                          onClick={() => setBlueprintTab("recommendation")}
+                          className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
+                            blueprintTab === "recommendation"
+                              ? "border-b-2 border-indigo-500 text-indigo-600"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Recommendation
+                        </button>
+                      )}
+                      {terraformCode && (
+                        <button
+                          onClick={() => setBlueprintTab("terraform")}
+                          className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
+                            blueprintTab === "terraform"
+                              ? "border-b-2 border-green-500 text-green-600"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Terraform Code
+                        </button>
+                      )}
                     </div>
-                    
+
                     {/* Design Content */}
                     {blueprintTab === "carlos" && design && (
                       <BlueprintWithDiagram design={design} />
                     )}
                     {blueprintTab === "ronei" && roneiDesign && (
                       <BlueprintWithDiagram design={roneiDesign} />
+                    )}
+                    {blueprintTab === "recommendation" && recommendation && (
+                      <div className="prose prose-slate max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{recommendation}</ReactMarkdown>
+                      </div>
+                    )}
+                    {blueprintTab === "terraform" && terraformCode && (
+                      <div className="prose prose-slate max-w-none">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{terraformCode}</ReactMarkdown>
+                      </div>
                     )}
                     {blueprintTab === "carlos" && !design && (
                       <div className="h-full flex flex-col items-center justify-center text-slate-300">
@@ -654,6 +711,8 @@ export default function App() {
                           setSecurityReport(entry.securityReport || "");
                           setCostReport(entry.costReport || "");
                           setReliabilityReport(entry.reliabilityReport || "");
+                          setRecommendation(entry.recommendation || "");
+                          setTerraformCode(entry.terraformCode || "");
                           setAgentChat(entry.agentChat || "");
                         }}
                       >
@@ -792,6 +851,13 @@ export default function App() {
                     icon={<Layout size={18} />}
                     name="Design Recommender"
                     description="Analyzes both Carlos' and Ronei's designs along with all specialist reports, then recommends which approach best fits your requirements. Provides detailed tradeoff analysis and explains when you might choose the alternative."
+                  />
+                  <AgentInfo
+                    iconBg="bg-green-100"
+                    labelColor="text-green-700"
+                    icon={<Cloud size={18} />}
+                    name="Terraform Coder"
+                    description="Generates production-ready Terraform infrastructure-as-code for the recommended design. Creates modular HCL code with main.tf, variables.tf, outputs.tf, and versions.tf files, following IaC best practices."
                   />
                 </div>
                 <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">

@@ -121,7 +121,8 @@ async def design_stream(req: dict):
                         "cost": "cost_report",
                         "reliability": "reliability_report",
                         "audit": "audit_report",
-                        "recommender": "recommendation"
+                        "recommender": "recommendation",
+                        "terraform_coder": "terraform_code"
                     }
 
                     if node_name in field_mappings:
@@ -169,6 +170,7 @@ async def design_stream(req: dict):
                     "security_report": final_state.get("security_report", ""),
                     "cost_report": final_state.get("cost_report", ""),
                     "reliability_report": final_state.get("reliability_report", ""),
+                    "terraform_code": final_state.get("terraform_code", ""),
                 },
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
