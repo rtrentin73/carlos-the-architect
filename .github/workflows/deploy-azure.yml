@@ -101,6 +101,16 @@ jobs:
 
       - name: Create Kubernetes secrets
         run: |
+          # Create ACR pull secret
+          ACR_USERNAME=$(az acr credential show --name ${{ needs.terraform.outputs.acr_login_server }} --query username -o tsv)
+          ACR_PASSWORD=$(az acr credential show --name ${{ needs.terraform.outputs.acr_login_server }} --query "passwords[0].value" -o tsv)
+          kubectl create secret docker-registry acr-secret \
+            --docker-server=${{ needs.terraform.outputs.acr_login_server }} \
+            --docker-username=$ACR_USERNAME \
+            --docker-password=$ACR_PASSWORD \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # Create app secrets
           kubectl create secret generic carlos-secrets \
             --from-literal=azure-openai-endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
             --from-literal=azure-openai-api-key=${{ secrets.AZURE_OPENAI_API_KEY }} \

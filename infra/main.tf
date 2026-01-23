@@ -51,14 +51,6 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 }
 
-# Grant AKS access to ACR
-resource "azurerm_role_assignment" "aks_acr" {
-  principal_id                     = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
-  role_definition_name             = "AcrPull"
-  scope                            = azurerm_container_registry.main.id
-  skip_service_principal_aad_check = true
-}
-
 # Static Web App for Frontend
 resource "azurerm_static_web_app" "frontend" {
   name                = "${local.resource_prefix}-frontend"
