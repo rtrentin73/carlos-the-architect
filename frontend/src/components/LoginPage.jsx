@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Cloud, User, Lock, Mail, LogIn, UserPlus, Loader2 } from 'lucide-react';
+import { User, Lock, Mail, LogIn, UserPlus, Loader2 } from 'lucide-react';
+import carlosImage from '../assets/splash.jpg';
 
 export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -35,8 +36,12 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <Cloud className="h-12 w-12 text-blue-400" />
+          <div className="flex flex-col items-center justify-center mb-4">
+            <img
+              src={carlosImage}
+              alt="Carlos the Architect"
+              className="w-24 h-24 rounded-full border-4 border-blue-500 shadow-xl mb-3 object-cover"
+            />
             <h1 className="text-3xl font-bold text-white">Carlos</h1>
           </div>
           <p className="text-gray-400">The Cloud Architect</p>
