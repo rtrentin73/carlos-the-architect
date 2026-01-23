@@ -1,6 +1,6 @@
 from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
-from langchain_openai import AzureChatOpenAI
+from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from tasks import (
     CARLOS_INSTRUCTIONS,
     AUDITOR_INSTRUCTIONS,
@@ -29,23 +29,42 @@ class CarlosState(TypedDict):
     ronei_tokens: list  # Token chunks from Ronei for streaming
     terraform_code: str  # Generated Terraform infrastructure code
 
-# Create LLM with explicit env vars
-llm = AzureChatOpenAI(
-    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    temperature=0.7,
-)
 
-# Ronei's LLM - more creative and sassy
-ronei_llm = AzureChatOpenAI(
-    azure_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    temperature=0.9,  # Higher temperature for more creative/sassy responses
-)
+def create_llm(temperature: float = 0.7):
+    """Create LLM client - supports both Azure OpenAI and Azure AI Foundry."""
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
+
+    # Azure AI Foundry endpoints contain 'services.ai.azure.com'
+    if "services.ai.azure.com" in endpoint:
+        # Azure AI Foundry - use OpenAI-compatible client
+        # Foundry inference endpoint format
+        base_url = endpoint.rstrip("/")
+        if not base_url.endswith("/models"):
+            base_url = f"{base_url}/models"
+
+        return ChatOpenAI(
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=temperature,
+            default_headers={"api-key": api_key},
+        )
+    else:
+        # Traditional Azure OpenAI
+        return AzureChatOpenAI(
+            azure_deployment=model,
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            temperature=temperature,
+        )
+
+
+# Create LLM instances
+llm = create_llm(temperature=0.7)
+ronei_llm = create_llm(temperature=0.9)  # Higher temperature for more creative/sassy responses
 
 async def carlos_design_node(state: CarlosState):
     """Carlos drafts the infrastructure"""
