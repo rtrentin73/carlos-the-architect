@@ -72,18 +72,27 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
 
 @app.post("/design")
 async def design(req: dict, current_user: User = Depends(get_current_active_user)):
-    """Return a full design document and its security audit."""
+    """Return a full design document and its security audit.
+
+    Can be called in two phases:
+    1. Initial call with 'text' (requirements) - returns clarifying questions
+    2. Follow-up call with 'user_answers' - completes the design with refined requirements
+    """
     print(f"Received request from {current_user.username}: {req}")
     try:
-        result = await carlos_graph.ainvoke(
-            {
-                "requirements": req["text"],
-                "conversation": "",
-                "scenario": req.get("scenario"),
-                "priorities": req.get("priorities", {}),
-            },
-            version="v2",
-        )
+        # Build initial state
+        initial_state = {
+            "requirements": req["text"],
+            "conversation": "",
+            "scenario": req.get("scenario"),
+            "priorities": req.get("priorities", {}),
+        }
+
+        # If user provided answers to clarifying questions, include them
+        if req.get("user_answers"):
+            initial_state["user_answers"] = req["user_answers"]
+
+        result = await carlos_graph.ainvoke(initial_state, version="v2")
         design_doc = result.get("design_doc", "")
         ronei_design = result.get("ronei_design", "")
         audit_status = result.get("audit_status", "unknown")
@@ -99,6 +108,14 @@ async def design(req: dict, current_user: User = Depends(get_current_active_user
             f"security_len={len(security_report)}, cost_len={len(cost_report)}, "
             f"reliability_len={len(reliability_report)}, recommendation_len={len(recommendation)}, convo_len={len(conversation)}"
         )
+        # Check if we're waiting for user answers (clarification phase)
+        if result.get("clarification_needed") and not result.get("design_doc"):
+            return {
+                "clarification_needed": True,
+                "agent_chat": conversation,
+                "refined_requirements": result.get("refined_requirements", ""),
+            }
+
         return {
             "design": design_doc,
             "ronei_design": ronei_design,
@@ -109,6 +126,7 @@ async def design(req: dict, current_user: User = Depends(get_current_active_user
             "security_report": security_report,
             "cost_report": cost_report,
             "reliability_report": reliability_report,
+            "clarification_needed": False,
         }
     except Exception as e:
         print(f"Error in design endpoint: {e}")
@@ -117,20 +135,32 @@ async def design(req: dict, current_user: User = Depends(get_current_active_user
 
 @app.post("/design-stream")
 async def design_stream(req: dict, current_user: User = Depends(get_current_active_user)):
-    """Stream design generation with real-time agent and token events."""
+    """Stream design generation with real-time agent and token events.
+
+    Can be called in two phases:
+    1. Initial call with 'text' (requirements) - returns clarifying questions
+    2. Follow-up call with 'user_answers' - completes the design with refined requirements
+    """
     print(f"Received streaming request from {current_user.username}: {req}")
 
     async def event_generator():
         final_state = {}
         try:
+            # Build initial state
+            initial_state = {
+                "requirements": req["text"],
+                "conversation": "",
+                "scenario": req.get("scenario"),
+                "priorities": req.get("priorities", {}),
+            }
+
+            # If user provided answers to clarifying questions, include them
+            if req.get("user_answers"):
+                initial_state["user_answers"] = req["user_answers"]
+
             # Stream events from LangGraph
             async for event in carlos_graph.astream(
-                {
-                    "requirements": req["text"],
-                    "conversation": "",
-                    "scenario": req.get("scenario"),
-                    "priorities": req.get("priorities", {}),
-                },
+                initial_state,
                 stream_mode="updates",
             ):
                 # Process each node completion event
@@ -208,6 +238,9 @@ async def design_stream(req: dict, current_user: User = Depends(get_current_acti
                     yield f"data: {json.dumps(complete_event)}\n\n"
 
             # Send final complete event with full state
+            # Check if we're waiting for user answers (clarification phase)
+            clarification_needed = final_state.get("clarification_needed", False) and not final_state.get("design_doc")
+
             complete_summary = {
                 "type": "complete",
                 "summary": {
@@ -221,6 +254,7 @@ async def design_stream(req: dict, current_user: User = Depends(get_current_acti
                     "cost_report": final_state.get("cost_report", ""),
                     "reliability_report": final_state.get("reliability_report", ""),
                     "terraform_code": final_state.get("terraform_code", ""),
+                    "clarification_needed": clarification_needed,
                 },
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }

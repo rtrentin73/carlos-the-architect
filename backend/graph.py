@@ -18,6 +18,7 @@ import operator
 class CarlosState(TypedDict):
     requirements: str
     refined_requirements: str  # Requirements after clarification
+    user_answers: str  # User's answers to clarification questions
     clarification_needed: bool  # Whether we need to gather more info
     design_doc: str
     ronei_design: str
@@ -103,6 +104,38 @@ async def requirements_gathering_node(state: CarlosState):
     return {
         "refined_requirements": state['requirements'],
         "clarification_needed": True,
+        "conversation": convo
+    }
+
+
+async def refine_requirements_node(state: CarlosState):
+    """Refine requirements based on user's answers to clarifying questions."""
+    user_answers = state.get('user_answers', '')
+
+    if not user_answers:
+        # No answers provided, use original requirements
+        return {"refined_requirements": state['requirements']}
+
+    # Create refined requirements by combining original + answers
+    refine_prompt = f"""Given the initial requirements and the user's answers to clarifying questions,
+create a comprehensive, refined requirements document that incorporates all the information.
+
+Initial Requirements:
+{state['requirements']}
+
+User's Answers to Clarifying Questions:
+{user_answers}
+
+Create a single, well-structured requirements document that includes all relevant details from both.
+Use markdown format with clear sections. Be specific and concrete."""
+
+    response = await get_llm().ainvoke(refine_prompt)
+    convo = state.get("conversation", "")
+    convo += "**Refined Requirements:**\n" + response.content + "\n\n"
+
+    return {
+        "refined_requirements": response.content,
+        "clarification_needed": False,
         "conversation": convo
     }
 
@@ -336,6 +369,7 @@ async def terraform_coder_node(state: CarlosState):
 # Build graph
 builder = StateGraph(CarlosState)
 builder.add_node("requirements_gathering", requirements_gathering_node)
+builder.add_node("refine_requirements", refine_requirements_node)
 builder.add_node("design", carlos_design_node)
 builder.add_node("ronei_design", ronei_design_node)
 builder.add_node("security", security_node)
@@ -345,12 +379,25 @@ builder.add_node("audit", auditor_node)
 builder.add_node("recommender", recommender_node)
 builder.add_node("terraform_coder", terraform_coder_node)
 
-# Start with requirements gathering
-builder.add_edge(START, "requirements_gathering")
+# Conditional start: if user_answers exist, skip to refine_requirements, otherwise gather requirements
+def should_gather_requirements(state):
+    """Check if we need to gather requirements or if we already have answers."""
+    return "requirements_gathering" if not state.get("user_answers") else "refine_requirements"
 
-# After requirements gathering, run Carlos and Ronei in parallel
-builder.add_edge("requirements_gathering", "design")
-builder.add_edge("requirements_gathering", "ronei_design")
+builder.add_conditional_edges(START, should_gather_requirements)
+
+# After requirements gathering, check if we have answers
+def check_for_answers(state):
+    """After gathering requirements, check if user provided answers."""
+    # If user_answers exist, go to refine_requirements to process them
+    # Otherwise, end here and wait for user to provide answers
+    return "refine_requirements" if state.get("user_answers") else END
+
+builder.add_conditional_edges("requirements_gathering", check_for_answers)
+
+# After refining requirements, run Carlos and Ronei in parallel
+builder.add_edge("refine_requirements", "design")
+builder.add_edge("refine_requirements", "ronei_design")
 
 # Security waits for both designs to complete, then other specialists run sequentially
 builder.add_edge("design", "security")
