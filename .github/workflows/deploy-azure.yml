@@ -14,7 +14,7 @@ env:
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
 
   # Terraform variables (configurable via GitHub Variables)
-  TF_VAR_location: ${{ vars.AZURE_LOCATION || 'eastus' }}
+  TF_VAR_location: ${{ vars.AZURE_LOCATION || 'westus' }}
   TF_VAR_environment: ${{ vars.ENVIRONMENT || 'prod' }}
   TF_VAR_project_name: ${{ vars.PROJECT_NAME || 'carlos' }}
   TF_VAR_app_service_sku: ${{ vars.APP_SERVICE_SKU || 'F1' }}

@@ -70,7 +70,7 @@ Go to **Settings → Secrets and variables → Actions → Variables**, and add:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AZURE_LOCATION` | `eastus` | Azure region for resources |
+| `AZURE_LOCATION` | `westus` | Azure region for resources |
 | `ENVIRONMENT` | `prod` | Environment name (prod, staging, dev) |
 | `PROJECT_NAME` | `carlos` | Project name for resource naming |
 | `APP_SERVICE_SKU` | `F1` | App Service Plan SKU (F1=Free, B1=Basic, S1=Standard) |
