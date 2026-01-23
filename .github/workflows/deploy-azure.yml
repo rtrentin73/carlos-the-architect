@@ -34,8 +34,6 @@ jobs:
       acr_login_server: ${{ steps.tf-outputs.outputs.acr_login_server }}
       aks_cluster_name: ${{ steps.tf-outputs.outputs.aks_cluster_name }}
       resource_group: ${{ steps.tf-outputs.outputs.resource_group }}
-      frontend_url: ${{ steps.tf-outputs.outputs.frontend_url }}
-      frontend_api_token: ${{ steps.tf-outputs.outputs.frontend_api_token }}
 
     steps:
       - name: Checkout code
@@ -66,13 +64,13 @@ jobs:
           echo "acr_login_server=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
           echo "aks_cluster_name=$(terraform output -raw aks_cluster_name)" >> $GITHUB_OUTPUT
           echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
-          echo "frontend_url=$(terraform output -raw frontend_url)" >> $GITHUB_OUTPUT
-          echo "frontend_api_token=$(terraform output -raw frontend_api_token)" >> $GITHUB_OUTPUT
 
-  build-and-deploy-backend:
-    name: Build and Deploy Backend to AKS
+  deploy-backend:
+    name: Deploy Backend to AKS
     runs-on: ubuntu-latest
     needs: terraform
+    outputs:
+      backend_url: ${{ steps.backend-url.outputs.url }}
 
     steps:
       - name: Checkout code
@@ -87,7 +85,7 @@ jobs:
         run: |
           az acr login --name ${{ needs.terraform.outputs.acr_login_server }}
 
-      - name: Build and push Docker image
+      - name: Build and push backend image
         working-directory: backend
         run: |
           docker build -t ${{ needs.terraform.outputs.acr_login_server }}/carlos-backend:${{ github.sha }} .
@@ -116,18 +114,17 @@ jobs:
             --from-literal=azure-openai-api-key=${{ secrets.AZURE_OPENAI_API_KEY }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Deploy to AKS
+      - name: Deploy backend to AKS
         run: |
-          # Substitute environment variables in the manifest
           export ACR_LOGIN_SERVER="${{ needs.terraform.outputs.acr_login_server }}"
           export IMAGE_TAG="${{ github.sha }}"
           export AZURE_OPENAI_DEPLOYMENT_NAME="${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o' }}"
           export AZURE_OPENAI_API_VERSION="${{ vars.AZURE_OPENAI_API_VERSION || '2024-08-01-preview' }}"
-          export FRONTEND_URL="${{ needs.terraform.outputs.frontend_url }}"
+          export FRONTEND_URL="*"
 
           envsubst < k8s/backend-deployment.yaml | kubectl apply -f -
 
-      - name: Wait for deployment
+      - name: Wait for backend deployment
         run: |
           kubectl rollout status deployment/carlos-backend --timeout=300s
 
@@ -138,7 +135,7 @@ jobs:
           for i in {1..30}; do
             IP=$(kubectl get svc carlos-backend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             if [ -n "$IP" ]; then
-              echo "backend_url=http://$IP" >> $GITHUB_OUTPUT
+              echo "url=http://$IP" >> $GITHUB_OUTPUT
               echo "Backend URL: http://$IP"
               break
             fi
@@ -146,9 +143,9 @@ jobs:
           done
 
   deploy-frontend:
-    name: Deploy Frontend
+    name: Deploy Frontend to AKS
     runs-on: ubuntu-latest
-    needs: [terraform, build-and-deploy-backend]
+    needs: [terraform, deploy-backend]
 
     steps:
       - name: Checkout code
@@ -159,36 +156,43 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get Backend URL from AKS
-        id: backend
+      - name: Login to ACR
+        run: |
+          az acr login --name ${{ needs.terraform.outputs.acr_login_server }}
+
+      - name: Build and push frontend image
+        working-directory: frontend
+        run: |
+          docker build \
+            --build-arg VITE_BACKEND_URL=${{ needs.deploy-backend.outputs.backend_url }} \
+            -t ${{ needs.terraform.outputs.acr_login_server }}/carlos-frontend:${{ github.sha }} .
+          docker tag ${{ needs.terraform.outputs.acr_login_server }}/carlos-frontend:${{ github.sha }} ${{ needs.terraform.outputs.acr_login_server }}/carlos-frontend:latest
+          docker push ${{ needs.terraform.outputs.acr_login_server }}/carlos-frontend:${{ github.sha }}
+          docker push ${{ needs.terraform.outputs.acr_login_server }}/carlos-frontend:latest
+
+      - name: Get AKS credentials
         run: |
           az aks get-credentials --resource-group ${{ needs.terraform.outputs.resource_group }} --name ${{ needs.terraform.outputs.aks_cluster_name }} --overwrite-existing
-          IP=$(kubectl get svc carlos-backend -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          echo "url=http://$IP" >> $GITHUB_OUTPUT
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+      - name: Deploy frontend to AKS
+        run: |
+          export ACR_LOGIN_SERVER="${{ needs.terraform.outputs.acr_login_server }}"
+          export IMAGE_TAG="${{ github.sha }}"
 
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
+          envsubst < k8s/frontend-deployment.yaml | kubectl apply -f -
 
-      - name: Build frontend
-        working-directory: frontend
-        env:
-          VITE_BACKEND_URL: ${{ steps.backend.outputs.url }}
-        run: npm run build
+      - name: Wait for frontend deployment
+        run: |
+          kubectl rollout status deployment/carlos-frontend --timeout=300s
 
-      - name: Deploy to Azure Static Web Apps
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ needs.terraform.outputs.frontend_api_token }}
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          action: "upload"
-          app_location: "frontend"
-          output_location: "dist"
-          skip_app_build: true
+      - name: Get frontend URL
+        run: |
+          echo "Waiting for LoadBalancer IP..."
+          for i in {1..30}; do
+            IP=$(kubectl get svc carlos-frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            if [ -n "$IP" ]; then
+              echo "Frontend URL: http://$IP"
+              break
+            fi
+            sleep 10
+          done

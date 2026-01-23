@@ -50,13 +50,3 @@ resource "azurerm_kubernetes_cluster" "main" {
     service_cidr   = "10.0.3.0/24"
   }
 }
-
-# Static Web App for Frontend
-resource "azurerm_static_web_app" "frontend" {
-  name                = "${local.resource_prefix}-frontend"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = "eastus2" # Static Web Apps have limited regions
-  sku_tier            = "Free"
-  sku_size            = "Free"
-  tags                = local.tags
-}

@@ -30,14 +30,3 @@ output "aks_kube_config" {
   value       = azurerm_kubernetes_cluster.main.kube_config_raw
   sensitive   = true
 }
-
-output "frontend_url" {
-  description = "Frontend Static Web App URL"
-  value       = "https://${azurerm_static_web_app.frontend.default_host_name}"
-}
-
-output "frontend_api_token" {
-  description = "Static Web App deployment token"
-  value       = azurerm_static_web_app.frontend.api_key
-  sensitive   = true
-}
