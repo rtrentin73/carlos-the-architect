@@ -2,6 +2,7 @@ from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from tasks import (
+    REQUIREMENTS_GATHERING_INSTRUCTIONS,
     CARLOS_INSTRUCTIONS,
     AUDITOR_INSTRUCTIONS,
     SECURITY_ANALYST_INSTRUCTIONS,
@@ -16,6 +17,8 @@ import operator
 
 class CarlosState(TypedDict):
     requirements: str
+    refined_requirements: str  # Requirements after clarification
+    clarification_needed: bool  # Whether we need to gather more info
     design_doc: str
     ronei_design: str
     audit_status: str  # "pending", "approved", "needs_revision"
@@ -85,6 +88,25 @@ def get_ronei_llm():
         _ronei_llm = create_llm(temperature=0.9)
     return _ronei_llm
 
+
+async def requirements_gathering_node(state: CarlosState):
+    """Ask clarifying questions about requirements before designing."""
+    prompt = (
+        f"{REQUIREMENTS_GATHERING_INSTRUCTIONS}\n\n"
+        f"Initial User Requirements:\n{state['requirements']}"
+    )
+    response = await get_llm().ainvoke(prompt)
+    convo = state.get("conversation", "")
+    convo += "**Requirements Team:**\n" + response.content + "\n\n"
+
+    # Set refined_requirements to original for now - will be updated with user answers
+    return {
+        "refined_requirements": state['requirements'],
+        "clarification_needed": True,
+        "conversation": convo
+    }
+
+
 async def carlos_design_node(state: CarlosState):
     """Carlos drafts the infrastructure"""
     scenario = state.get("scenario")
@@ -130,7 +152,10 @@ async def carlos_design_node(state: CarlosState):
 
     extra_context = "\n".join(context_lines)
 
-    prompt = f"{CARLOS_INSTRUCTIONS}\n\nUser requirements: {state['requirements']}" + (
+    # Use refined_requirements if available, otherwise fall back to original requirements
+    requirements = state.get('refined_requirements') or state['requirements']
+
+    prompt = f"{CARLOS_INSTRUCTIONS}\n\nUser requirements: {requirements}" + (
         f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
     )
     response = ""
@@ -184,7 +209,10 @@ async def ronei_design_node(state: CarlosState):
 
     extra_context = "\n".join(context_lines)
 
-    prompt = f"{RONEI_INSTRUCTIONS}\n\nUser requirements: {state['requirements']}" + (
+    # Use refined_requirements if available, otherwise fall back to original requirements
+    requirements = state.get('refined_requirements') or state['requirements']
+
+    prompt = f"{RONEI_INSTRUCTIONS}\n\nUser requirements: {requirements}" + (
         f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
     )
     response = ""
@@ -307,6 +335,7 @@ async def terraform_coder_node(state: CarlosState):
 
 # Build graph
 builder = StateGraph(CarlosState)
+builder.add_node("requirements_gathering", requirements_gathering_node)
 builder.add_node("design", carlos_design_node)
 builder.add_node("ronei_design", ronei_design_node)
 builder.add_node("security", security_node)
@@ -316,9 +345,12 @@ builder.add_node("audit", auditor_node)
 builder.add_node("recommender", recommender_node)
 builder.add_node("terraform_coder", terraform_coder_node)
 
-# Run Carlos and Ronei in parallel for faster execution
-builder.add_edge(START, "design")
-builder.add_edge(START, "ronei_design")
+# Start with requirements gathering
+builder.add_edge(START, "requirements_gathering")
+
+# After requirements gathering, run Carlos and Ronei in parallel
+builder.add_edge("requirements_gathering", "design")
+builder.add_edge("requirements_gathering", "ronei_design")
 
 # Security waits for both designs to complete, then other specialists run sequentially
 builder.add_edge("design", "security")
