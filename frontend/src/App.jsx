@@ -41,7 +41,8 @@ export default function App() {
     reliability: 'pending',
     audit: 'pending',
     recommender: 'pending',
-    terraform_coder: 'pending'
+    terraform_coder: 'pending',
+    terraform_validator: 'pending'
   });
   const [tokenCounts, setTokenCounts] = useState({
     carlos: 0,
@@ -62,7 +63,8 @@ export default function App() {
       reliability: 'SRE - Evaluating reliability and operations',
       audit: 'Chief Auditor - Performing final audit review',
       recommender: 'Design Recommender - Choosing best design approach',
-      terraform_coder: 'Terraform Coder - Generating infrastructure-as-code'
+      terraform_coder: 'Terraform Coder - Generating infrastructure-as-code',
+      terraform_validator: 'Terraform Validator - Reviewing infrastructure code'
     };
 
     switch (event.type) {
@@ -203,6 +205,8 @@ export default function App() {
           recommendation: summary.recommendation || "",
           terraformCode: summary.terraform_code || "",
           agentChat: summary.agent_chat || "",
+          carlosTokens: tokenCounts.carlos,
+          roneiTokens: tokenCounts.ronei_design,
           timestamp: new Date().toLocaleString()
         };
         const updatedHistory = [newEntry, ...history];
@@ -247,7 +251,8 @@ export default function App() {
       reliability: 'pending',
       audit: 'pending',
       recommender: 'pending',
-      terraform_coder: 'pending'
+      terraform_coder: 'pending',
+      terraform_validator: 'pending'
     });
     setTokenCounts({
       carlos: 0,
@@ -719,7 +724,23 @@ export default function App() {
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <p className="font-semibold text-slate-800">{entry.requirements.substring(0, 50)}...</p>
-                            <p className="text-sm text-slate-500 mt-1">{entry.timestamp}</p>
+                            <div className="flex items-center gap-4 mt-1">
+                              <p className="text-sm text-slate-500">{entry.timestamp}</p>
+                              {(entry.carlosTokens || entry.roneiTokens) && (
+                                <div className="flex items-center gap-2 text-xs">
+                                  {entry.carlosTokens > 0 && (
+                                    <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded">
+                                      Carlos: {entry.carlosTokens.toLocaleString()} tokens
+                                    </span>
+                                  )}
+                                  {entry.roneiTokens > 0 && (
+                                    <span className="bg-pink-50 text-pink-600 px-2 py-0.5 rounded">
+                                      Ronei: {entry.roneiTokens.toLocaleString()} tokens
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                           {entry.auditStatus && (
                             <span className={`text-xs font-semibold px-2 py-1 rounded-full ${entry.auditStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -858,6 +879,13 @@ export default function App() {
                     icon={<Cloud size={18} />}
                     name="Terraform Coder"
                     description="Generates production-ready Terraform infrastructure-as-code for the recommended design. Creates modular HCL code with main.tf, variables.tf, outputs.tf, and versions.tf files, following IaC best practices."
+                  />
+                  <AgentInfo
+                    iconBg="bg-orange-100"
+                    labelColor="text-orange-700"
+                    icon={<ShieldCheck size={18} />}
+                    name="Terraform Validator"
+                    description="Reviews the generated Terraform code for syntax, security issues, best practices, and completeness. Identifies hardcoded secrets, overly permissive rules, and cloud-specific anti-patterns before deployment."
                   />
                 </div>
                 <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
