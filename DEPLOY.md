@@ -20,10 +20,10 @@ This guide explains how to deploy Carlos the Architect to Azure using Terraform 
 │  │   React/Vite    │     │    FastAPI + LangGraph       │   │
 │  └─────────────────┘     └──────────────┬──────────────┘   │
 │                                          │                   │
-│  ┌─────────────────┐     ┌──────────────▼──────────────┐   │
-│  │ Container       │     │      Azure OpenAI           │   │
-│  │ Registry (ACR)  │     │        (GPT-4o)             │   │
-│  └─────────────────┘     └─────────────────────────────┘   │
+│                          ┌──────────────▼──────────────┐   │
+│                          │      Azure OpenAI           │   │
+│                          │        (GPT-4o)             │   │
+│                          └─────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -52,7 +52,7 @@ chmod +x setup-backend.sh
 
 ### 3. Configure GitHub Secrets
 
-Go to your repository Settings → Secrets and variables → Actions, and add:
+Go to your repository **Settings → Secrets and variables → Actions → Secrets**, and add:
 
 | Secret | Description |
 |--------|-------------|
@@ -64,7 +64,20 @@ Go to your repository Settings → Secrets and variables → Actions, and add:
 | `AZURE_OPENAI_ENDPOINT` | Your Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_API_KEY` | Your Azure OpenAI API key |
 
-### 4. Deploy
+### 4. Configure GitHub Variables (Optional)
+
+Go to **Settings → Secrets and variables → Actions → Variables**, and add:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AZURE_LOCATION` | `eastus` | Azure region for resources |
+| `ENVIRONMENT` | `prod` | Environment name (prod, staging, dev) |
+| `PROJECT_NAME` | `carlos` | Project name for resource naming |
+| `APP_SERVICE_SKU` | `F1` | App Service Plan SKU (F1=Free, B1=Basic, S1=Standard) |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | `gpt-4o` | Azure OpenAI model deployment name |
+| `AZURE_OPENAI_API_VERSION` | `2024-08-01-preview` | Azure OpenAI API version |
+
+### 5. Deploy
 
 Push to the `main` branch or manually trigger the workflow:
 
@@ -99,19 +112,19 @@ After deployment, Terraform will output:
 
 - `backend_url` - Backend API URL (https://carlos-prod-backend.azurewebsites.net)
 - `frontend_url` - Frontend URL (https://carlos-prod-frontend.azurestaticapps.net)
-- `acr_login_server` - Container registry URL
 
 ## Costs
 
-Estimated monthly costs (East US region):
+Estimated monthly costs:
 
 | Resource | SKU | Est. Cost |
 |----------|-----|-----------|
-| App Service Plan | B1 | ~$13/month |
-| Container Registry | Basic | ~$5/month |
+| App Service Plan | F1 (Free) | $0 |
 | Static Web App | Free | $0 |
 | Storage (TF state) | Standard | ~$1/month |
-| **Total** | | **~$19/month** |
+| **Total** | | **~$1/month** |
+
+*Note: F1 tier has limitations (60 min/day compute). For production, use B1 (~$13/month) or higher.*
 
 ## Troubleshooting
 
@@ -125,6 +138,12 @@ az webapp log tail --name carlos-prod-backend --resource-group carlos-prod-rg
 ### CORS errors
 
 Ensure `ALLOWED_ORIGINS` in App Service settings includes your frontend URL.
+
+### Quota errors
+
+If you see quota errors for B1 VMs, either:
+1. Use F1 (Free) tier: Set `APP_SERVICE_SKU=F1` in GitHub Variables
+2. Request quota increase in Azure Portal
 
 ### Terraform state issues
 
