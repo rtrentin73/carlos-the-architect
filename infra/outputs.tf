@@ -3,26 +3,14 @@ output "resource_group_name" {
   value       = azurerm_resource_group.main.name
 }
 
-output "acr_login_server" {
-  description = "Azure Container Registry login server"
-  value       = azurerm_container_registry.main.login_server
-}
-
-output "acr_admin_username" {
-  description = "Azure Container Registry admin username"
-  value       = azurerm_container_registry.main.admin_username
-  sensitive   = true
-}
-
-output "acr_admin_password" {
-  description = "Azure Container Registry admin password"
-  value       = azurerm_container_registry.main.admin_password
-  sensitive   = true
-}
-
 output "backend_url" {
   description = "Backend App Service URL"
   value       = "https://${azurerm_linux_web_app.backend.default_hostname}"
+}
+
+output "backend_name" {
+  description = "Backend App Service name"
+  value       = azurerm_linux_web_app.backend.name
 }
 
 output "frontend_url" {

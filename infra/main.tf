@@ -14,16 +14,6 @@ resource "azurerm_resource_group" "main" {
   tags     = local.tags
 }
 
-# Azure Container Registry
-resource "azurerm_container_registry" "main" {
-  name                = "${var.project_name}${var.environment}acr"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
-  sku                 = "Basic"
-  admin_enabled       = true
-  tags                = local.tags
-}
-
 # App Service Plan (Linux)
 resource "azurerm_service_plan" "main" {
   name                = "${local.resource_prefix}-plan"
@@ -34,7 +24,7 @@ resource "azurerm_service_plan" "main" {
   tags                = local.tags
 }
 
-# Backend App Service (Container)
+# Backend App Service (Python)
 resource "azurerm_linux_web_app" "backend" {
   name                = "${local.resource_prefix}-backend"
   resource_group_name = azurerm_resource_group.main.name
@@ -44,22 +34,18 @@ resource "azurerm_linux_web_app" "backend" {
   tags                = local.tags
 
   site_config {
-    always_on                         = var.app_service_sku != "F1" && var.app_service_sku != "D1"
-    container_registry_use_managed_identity = false
+    always_on = var.app_service_sku != "F1" && var.app_service_sku != "D1"
 
     application_stack {
-      docker_image_name        = "${azurerm_container_registry.main.login_server}/carlos-backend:latest"
-      docker_registry_url      = "https://${azurerm_container_registry.main.login_server}"
-      docker_registry_username = azurerm_container_registry.main.admin_username
-      docker_registry_password = azurerm_container_registry.main.admin_password
+      python_version = "3.11"
     }
 
     health_check_path = "/health"
   }
 
   app_settings = {
-    WEBSITES_ENABLE_APP_SERVICE_STORAGE = "false"
-    DOCKER_ENABLE_CI                    = "true"
+    SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
+    ENABLE_ORYX_BUILD              = "true"
 
     # Azure OpenAI settings
     AZURE_OPENAI_ENDPOINT        = var.azure_openai_endpoint

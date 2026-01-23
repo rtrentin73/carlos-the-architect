@@ -17,9 +17,9 @@ variable "project_name" {
 }
 
 variable "app_service_sku" {
-  description = "App Service Plan SKU"
+  description = "App Service Plan SKU (F1=Free, B1=Basic, S1=Standard)"
   type        = string
-  default     = "B1"
+  default     = "F1"
 }
 
 variable "azure_openai_endpoint" {
