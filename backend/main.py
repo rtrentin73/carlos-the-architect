@@ -3,14 +3,25 @@ import os
 
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from graph import carlos_graph
+from auth import (
+    User,
+    UserCreate,
+    Token,
+    authenticate_user,
+    create_access_token,
+    create_user,
+    get_current_active_user,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+)
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-app = FastAPI()
+app = FastAPI(title="Carlos the Architect API")
 
 # Get allowed origins from environment or use defaults
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
@@ -29,10 +40,40 @@ async def health():
     """Health check endpoint for container orchestration."""
     return {"status": "healthy"}
 
+
+# Auth endpoints
+@app.post("/auth/register", response_model=User)
+async def register(user_data: UserCreate):
+    """Register a new user."""
+    return create_user(user_data)
+
+
+@app.post("/auth/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """Login and get access token."""
+    user = authenticate_user(form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.get("/auth/me", response_model=User)
+async def get_me(current_user: User = Depends(get_current_active_user)):
+    """Get current user info."""
+    return current_user
+
 @app.post("/design")
-async def design(req: dict):
+async def design(req: dict, current_user: User = Depends(get_current_active_user)):
     """Return a full design document and its security audit."""
-    print(f"Received request: {req}")
+    print(f"Received request from {current_user.username}: {req}")
     try:
         result = await carlos_graph.ainvoke(
             {
@@ -75,9 +116,9 @@ async def design(req: dict):
 
 
 @app.post("/design-stream")
-async def design_stream(req: dict):
+async def design_stream(req: dict, current_user: User = Depends(get_current_active_user)):
     """Stream design generation with real-time agent and token events."""
-    print(f"Received streaming request: {req}")
+    print(f"Received streaming request from {current_user.username}: {req}")
 
     async def event_generator():
         final_state = {}

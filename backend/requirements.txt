@@ -7,3 +7,5 @@ langchain
 langchain-openai
 openai
 pydantic
+python-jose[cryptography]
+passlib[bcrypt]

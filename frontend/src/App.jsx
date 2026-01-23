@@ -2,10 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User } from 'lucide-react';
 import Splash from './components/Splash';
+import LoginPage from './components/LoginPage';
+import { useAuth } from './contexts/AuthContext';
 
 export default function App() {
+  const { user, token, loading, logout, isAuthenticated } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [input, setInput] = useState("");
   const [scenario, setScenario] = useState("custom");
@@ -267,7 +270,10 @@ export default function App() {
       console.log(`Streaming from ${backendBaseUrl}/design-stream`);
       const response = await fetch(`${backendBaseUrl}/design-stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify({
           text: input,
           scenario,
@@ -401,6 +407,20 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  // Show loading while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+      </div>
+    );
+  }
+
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   if (showSplash) return <Splash />;
 
   return (
@@ -411,7 +431,7 @@ export default function App() {
           <div className="bg-blue-500 p-2 rounded-lg"><Layout size={20}/></div>
           <span className="font-bold text-xl text-white whitespace-nowrap">Carlos AI</span>
         </div>
-        <nav className="space-y-4">
+        <nav className="space-y-4 flex-1">
           <NavItem icon={<PenTool size={18}/>} label="New Blueprint" active={currentView === "blueprint"} onClick={() => setCurrentView("blueprint")} />
           <NavItem icon={<Activity size={18}/>} label="Live Activity" active={currentView === "activity"} onClick={() => setCurrentView("activity")} />
           <NavItem icon={<Cloud size={18}/>} label="Cloud History" active={currentView === "history"} onClick={() => setCurrentView("history")} />
@@ -420,6 +440,21 @@ export default function App() {
           <NavItem icon={<Layout size={18}/>} label="Help & Agents" active={currentView === "help"} onClick={() => setCurrentView("help")} />
           <NavItem icon={<Cloud size={18}/>} label="Analytics" active={currentView === "analytics"} onClick={() => setCurrentView("analytics")} />
         </nav>
+
+        {/* User info and logout */}
+        <div className="mt-auto pt-6 border-t border-slate-700">
+          <div className="flex items-center gap-3 px-3 py-2 text-slate-300">
+            <User size={18} />
+            <span className="text-sm truncate">{user?.username}</span>
+          </div>
+          <button
+            onClick={logout}
+            className="flex items-center gap-3 w-full p-3 rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition"
+          >
+            <LogOut size={18} />
+            <span>Sign Out</span>
+          </button>
+        </div>
       </aside>
 
       {/* Main Design Area */}
