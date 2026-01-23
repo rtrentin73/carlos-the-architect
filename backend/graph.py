@@ -36,6 +36,9 @@ def create_llm(temperature: float = 0.7):
     api_key = os.getenv("AZURE_OPENAI_API_KEY")
     model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
 
+    if not endpoint or not api_key:
+        raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set")
+
     # Azure AI Foundry endpoints contain 'services.ai.azure.com'
     if "services.ai.azure.com" in endpoint:
         # Azure AI Foundry - use OpenAI-compatible client
@@ -62,9 +65,25 @@ def create_llm(temperature: float = 0.7):
         )
 
 
-# Create LLM instances
-llm = create_llm(temperature=0.7)
-ronei_llm = create_llm(temperature=0.9)  # Higher temperature for more creative/sassy responses
+# Lazy LLM initialization - created on first use
+_llm = None
+_ronei_llm = None
+
+
+def get_llm():
+    """Get or create the main LLM instance."""
+    global _llm
+    if _llm is None:
+        _llm = create_llm(temperature=0.7)
+    return _llm
+
+
+def get_ronei_llm():
+    """Get or create Ronei's LLM instance (more creative)."""
+    global _ronei_llm
+    if _ronei_llm is None:
+        _ronei_llm = create_llm(temperature=0.9)
+    return _ronei_llm
 
 async def carlos_design_node(state: CarlosState):
     """Carlos drafts the infrastructure"""
@@ -116,7 +135,7 @@ async def carlos_design_node(state: CarlosState):
     )
     response = ""
     tokens = []
-    async for chunk in llm.astream(prompt):
+    async for chunk in get_llm().astream(prompt):
         token = chunk.content
         response += token
         tokens.append(token)
@@ -170,7 +189,7 @@ async def ronei_design_node(state: CarlosState):
     )
     response = ""
     tokens = []
-    async for chunk in ronei_llm.astream(prompt):
+    async for chunk in get_ronei_llm().astream(prompt):
         token = chunk.content
         response += token
         tokens.append(token)
@@ -188,7 +207,7 @@ async def security_node(state: CarlosState):
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a security perspective."
     )
-    response = await llm.ainvoke(prompt)
+    response = await get_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**Security Analyst:**\n" + response.content + "\n\n"
     return {"security_report": response.content, "conversation": convo}
@@ -202,7 +221,7 @@ async def cost_node(state: CarlosState):
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a cost optimization perspective."
     )
-    response = await llm.ainvoke(prompt)
+    response = await get_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**Cost Specialist:**\n" + response.content + "\n\n"
     return {"cost_report": response.content, "conversation": convo}
@@ -216,7 +235,7 @@ async def reliability_node(state: CarlosState):
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a reliability and operations perspective."
     )
-    response = await llm.ainvoke(prompt)
+    response = await get_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**SRE:**\n" + response.content + "\n\n"
     return {"reliability_report": response.content, "conversation": convo}
@@ -231,7 +250,7 @@ async def auditor_node(state: CarlosState):
         f"=== Cost Report ===\n{state.get('cost_report', '')}\n\n"
         f"=== Reliability Report ===\n{state.get('reliability_report', '')}\n\n"
     )
-    response = await llm.ainvoke(prompt)
+    response = await get_llm().ainvoke(prompt)
     status = "approved" if "APPROVED" in response.content.upper() else "needs_revision"
     convo = state.get("conversation", "")
     convo += "**Chief Auditor:**\n" + response.content + "\n\n"
@@ -250,7 +269,7 @@ async def recommender_node(state: CarlosState):
         f"=== Reliability Report ===\n{state.get('reliability_report', '')}\n\n"
         f"=== Chief Auditor Verdict ===\n{state.get('audit_report', '')}\n\n"
     )
-    response = await llm.ainvoke(prompt)
+    response = await get_llm().ainvoke(prompt)
     content = (response.content or "").strip()
     upper = content.upper()
     if not (upper.startswith("RECOMMEND: CARLOS") or upper.startswith("RECOMMEND: RONEI")):
@@ -281,7 +300,7 @@ async def terraform_coder_node(state: CarlosState):
         f"=== Design Recommendation ===\n{recommendation}\n\n"
         f"Please generate production-ready Terraform code for this architecture."
     )
-    response = await llm.ainvoke(prompt)
+    response = await get_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**Terraform Coder:**\n" + response.content + "\n\n"
     return {"terraform_code": response.content, "conversation": convo}
