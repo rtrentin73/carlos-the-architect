@@ -16,10 +16,16 @@ variable "project_name" {
   default     = "carlos"
 }
 
-variable "app_service_sku" {
-  description = "App Service Plan SKU (F1=Free, B1=Basic, S1=Standard)"
+variable "aks_node_count" {
+  description = "Number of nodes in the AKS cluster"
+  type        = number
+  default     = 1
+}
+
+variable "aks_vm_size" {
+  description = "VM size for AKS nodes"
   type        = string
-  default     = "F1"
+  default     = "Standard_B2s"
 }
 
 variable "azure_openai_endpoint" {

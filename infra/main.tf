@@ -14,49 +14,49 @@ resource "azurerm_resource_group" "main" {
   tags     = local.tags
 }
 
-# App Service Plan (Linux)
-resource "azurerm_service_plan" "main" {
-  name                = "${local.resource_prefix}-plan"
+# Azure Container Registry
+resource "azurerm_container_registry" "main" {
+  name                = "${var.project_name}${var.environment}acr"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  os_type             = "Linux"
-  sku_name            = var.app_service_sku
+  sku                 = "Basic"
+  admin_enabled       = true
   tags                = local.tags
 }
 
-# Backend App Service (Python)
-resource "azurerm_linux_web_app" "backend" {
-  name                = "${local.resource_prefix}-backend"
-  resource_group_name = azurerm_resource_group.main.name
+# AKS Cluster
+resource "azurerm_kubernetes_cluster" "main" {
+  name                = "${local.resource_prefix}-aks"
   location            = azurerm_resource_group.main.location
-  service_plan_id     = azurerm_service_plan.main.id
-  https_only          = true
+  resource_group_name = azurerm_resource_group.main.name
+  dns_prefix          = "${var.project_name}-${var.environment}"
   tags                = local.tags
 
-  site_config {
-    always_on = var.app_service_sku != "F1" && var.app_service_sku != "D1"
-
-    application_stack {
-      python_version = "3.11"
-    }
-
-    health_check_path = "/health"
+  default_node_pool {
+    name                = "default"
+    node_count          = var.aks_node_count
+    vm_size             = var.aks_vm_size
+    os_disk_size_gb     = 30
+    temporary_name_for_rotation = "temppool"
   }
 
-  app_settings = {
-    SCM_DO_BUILD_DURING_DEPLOYMENT = "true"
-    ENABLE_ORYX_BUILD              = "true"
-
-    # Azure OpenAI settings
-    AZURE_OPENAI_ENDPOINT        = var.azure_openai_endpoint
-    AZURE_OPENAI_API_KEY         = var.azure_openai_api_key
-    AZURE_OPENAI_DEPLOYMENT_NAME = var.azure_openai_deployment_name
-    AZURE_OPENAI_API_VERSION     = var.azure_openai_api_version
-    OPENAI_API_VERSION           = var.azure_openai_api_version
-
-    # CORS - allow frontend
-    ALLOWED_ORIGINS = "https://${local.resource_prefix}-frontend.azurestaticapps.net"
+  identity {
+    type = "SystemAssigned"
   }
+
+  network_profile {
+    network_plugin = "azure"
+    dns_service_ip = "10.0.3.10"
+    service_cidr   = "10.0.3.0/24"
+  }
+}
+
+# Grant AKS access to ACR
+resource "azurerm_role_assignment" "aks_acr" {
+  principal_id                     = azurerm_kubernetes_cluster.main.kubelet_identity[0].object_id
+  role_definition_name             = "AcrPull"
+  scope                            = azurerm_container_registry.main.id
+  skip_service_principal_aad_check = true
 }
 
 # Static Web App for Frontend
