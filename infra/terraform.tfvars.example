@@ -1,0 +1,15 @@
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control
+
+location     = "eastus"
+environment  = "prod"
+project_name = "carlos"
+
+# App Service SKU (F1=Free, B1=Basic, S1=Standard, P1V2=Premium)
+app_service_sku = "B1"
+
+# Azure OpenAI Configuration (get from Azure Portal)
+azure_openai_endpoint        = "https://your-openai-resource.openai.azure.com/"
+azure_openai_api_key         = "your-api-key-here"
+azure_openai_deployment_name = "gpt-4o"
+azure_openai_api_version     = "2024-08-01-preview"
