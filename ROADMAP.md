@@ -22,7 +22,7 @@ Transform Carlos from a specialized cloud architecture design tool into an **ent
 - ✅ **GitHub Actions CI/CD** pipeline with Terraform infrastructure-as-code
 
 **Limitations:**
-- ❌ No historical learning from feedback data (feedback collected but not yet used for improvement)
+- ✅ **Historical learning from feedback data** - designs now incorporate patterns from successful past deployments
 - ❌ Fixed orchestration pattern (hard-coded LangGraph DAG)
 - ❌ Limited to architecture design domain
 - ❌ No production audit logs or compliance tracking

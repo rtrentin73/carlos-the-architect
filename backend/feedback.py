@@ -198,6 +198,78 @@ class CosmosDBFeedbackStore:
             print(f"  Error getting user feedback: {e}")
             return []
 
+    async def search_by_keywords(
+        self,
+        keywords: List[str],
+        cloud_provider: Optional[str] = None,
+        limit: int = 20
+    ) -> List[StoredFeedback]:
+        """
+        Search feedback by keywords in requirements_summary.
+
+        Used by the historical learning module to find similar past designs.
+
+        Args:
+            keywords: List of keywords to search for
+            cloud_provider: Optional filter by cloud provider
+            limit: Maximum results to return
+
+        Returns:
+            List of matching StoredFeedback records, sorted by rating
+        """
+        if not self._connected or not self._container:
+            return []
+
+        if not keywords:
+            return []
+
+        try:
+            # Build query with CONTAINS for keyword matching
+            # We check if requirements_summary contains any of the keywords
+            keyword_conditions = " OR ".join([
+                f"CONTAINS(LOWER(c.requirements_summary), @kw{i})"
+                for i in range(len(keywords))
+            ])
+
+            query = f"""
+                SELECT * FROM c
+                WHERE c.type = 'deployment_feedback'
+                AND c.requirements_summary != null
+                AND ({keyword_conditions})
+            """
+
+            parameters = [
+                {"name": f"@kw{i}", "value": kw.lower()}
+                for i, kw in enumerate(keywords)
+            ]
+
+            # Add cloud provider filter if specified
+            if cloud_provider:
+                query = query.replace(
+                    f"AND ({keyword_conditions})",
+                    f"AND c.cloud_provider = @cloud_provider AND ({keyword_conditions})"
+                )
+                parameters.append({"name": "@cloud_provider", "value": cloud_provider})
+
+            results = []
+            async for item in self._container.query_items(
+                query=query,
+                parameters=parameters
+            ):
+                results.append(StoredFeedback(**item))
+
+            # Sort by satisfaction rating (descending), then by created_at (descending)
+            results.sort(
+                key=lambda f: (f.satisfaction_rating, f.created_at),
+                reverse=True
+            )
+
+            return results[:limit]
+
+        except Exception as e:
+            print(f"  Error searching feedback by keywords: {e}")
+            return []
+
     async def get_analytics(self) -> dict:
         """Get aggregate deployment analytics."""
         if not self._connected or not self._container:
@@ -387,6 +459,40 @@ class InMemoryFeedbackStore:
     async def get_user_feedback(self, username: str, limit: int = 20) -> List[StoredFeedback]:
         feedback_ids = self._user_feedback.get(username, [])[:limit]
         return [self._feedback[fid] for fid in feedback_ids if fid in self._feedback]
+
+    async def search_by_keywords(
+        self,
+        keywords: List[str],
+        cloud_provider: Optional[str] = None,
+        limit: int = 20
+    ) -> List[StoredFeedback]:
+        """
+        Search feedback by keywords in requirements_summary.
+
+        Used by the historical learning module to find similar past designs.
+        """
+        if not keywords:
+            return []
+
+        results = []
+        for feedback in self._feedback.values():
+            if not feedback.requirements_summary:
+                continue
+
+            # Check if any keyword matches (case-insensitive)
+            summary_lower = feedback.requirements_summary.lower()
+            if any(kw.lower() in summary_lower for kw in keywords):
+                # Filter by cloud_provider if specified
+                if cloud_provider and feedback.cloud_provider != cloud_provider:
+                    continue
+                results.append(feedback)
+
+        # Sort by rating (descending) then date (descending)
+        results.sort(
+            key=lambda f: (f.satisfaction_rating, f.created_at),
+            reverse=True
+        )
+        return results[:limit]
 
     async def get_analytics(self) -> dict:
         total = self._analytics["total_feedback"]
