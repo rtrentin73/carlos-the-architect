@@ -16,3 +16,4 @@ python-docx
 openpyxl
 slowapi
 redis[hiredis]
+azure-cosmos

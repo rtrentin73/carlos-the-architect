@@ -5,6 +5,7 @@ import mermaid from 'mermaid';
 import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
+import DeploymentTracker from './components/DeploymentTracker';
 import { useAuth } from './contexts/AuthContext';
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
   const [isCacheHit, setIsCacheHit] = useState(false);
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
+  const [currentDesignId, setCurrentDesignId] = useState(null);
 
   // Requirements clarification state
   const [clarificationNeeded, setClarificationNeeded] = useState(false);
@@ -245,9 +247,12 @@ export default function App() {
         setClarificationQuestions("");
         setStreamingQuestions("");
 
-        // Save to history
+        // Generate design ID and save to history
+        const designId = `design-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        setCurrentDesignId(designId);
+
         const newEntry = {
-          id: Date.now(),
+          id: designId,
           requirements: input,
           scenario,
           costPerformance,
@@ -429,6 +434,7 @@ export default function App() {
     setStreamingQuestions("");
     setActivityLog([]);
     setIsCacheHit(false);
+    setCurrentDesignId(null); // Reset design ID for new design
     setAgentStatuses({
       design: 'pending',
       ronei_design: 'pending',
@@ -870,6 +876,16 @@ export default function App() {
                       <div className="h-full flex flex-col items-center justify-center text-slate-300">
                         <Cloud size={64} className="mb-4 opacity-20"/>
                         <p className="text-xl italic">Waiting for Ronei's design...</p>
+                      </div>
+                    )}
+
+                    {/* Deployment Feedback Tracker */}
+                    {!isDesigning && currentDesignId && (design || roneiDesign) && (
+                      <div className="mt-8 pt-8 border-t border-slate-200">
+                        <DeploymentTracker
+                          designId={currentDesignId}
+                          requirements={input}
+                        />
                       </div>
                     )}
                   </div>

@@ -13,6 +13,12 @@ from slowapi.errors import RateLimitExceeded
 from graph import carlos_graph
 from llm_pool import get_pool
 from cache import get_cache, stream_cached_design, initialize_cache, close_cache
+from feedback import (
+    DeploymentFeedback,
+    get_feedback_store,
+    initialize_feedback_store,
+    close_feedback_store,
+)
 from auth import (
     User,
     UserCreate,
@@ -59,6 +65,9 @@ async def lifespan(app: FastAPI):
     # Initialize design cache (Redis if available, otherwise in-memory)
     await initialize_cache(ttl_hours=24)
 
+    # Initialize feedback store (Redis if available, otherwise in-memory)
+    await initialize_feedback_store()
+
     print("✅ Backend ready to serve requests")
 
     yield
@@ -73,6 +82,9 @@ async def lifespan(app: FastAPI):
 
     # Close cache connection
     await close_cache()
+
+    # Close feedback store
+    await close_feedback_store()
 
     print("✅ Shutdown complete")
 
@@ -576,3 +588,95 @@ async def clear_cache(current_user: User = Depends(get_current_active_user)):
         "message": "Cache cleared",
         "cleared_entries": cleared,
     }
+
+
+# ============================================================================
+# Deployment Feedback Endpoints
+# ============================================================================
+
+@app.post("/feedback/deployment")
+async def submit_deployment_feedback(
+    feedback: DeploymentFeedback,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Submit feedback about a deployed design.
+
+    Track deployment outcomes to:
+    - Monitor success rates
+    - Identify common issues
+    - Improve design quality over time
+    """
+    print(f"📊 Deployment feedback from {current_user.username} for design {feedback.design_id}")
+
+    try:
+        store = get_feedback_store()
+        feedback_id = await store.save_feedback(
+            username=current_user.username,
+            feedback=feedback,
+            requirements_summary=None  # Could be populated from design history
+        )
+
+        return {
+            "status": "success",
+            "feedback_id": feedback_id,
+            "message": "Thank you for your feedback! This helps improve Carlos."
+        }
+    except Exception as e:
+        print(f"❌ Error saving feedback: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save feedback: {str(e)}"
+        )
+
+
+@app.get("/feedback/my-feedback")
+async def get_my_feedback(
+    current_user: User = Depends(get_current_active_user),
+    limit: int = 20
+):
+    """Get deployment feedback submitted by the current user."""
+    try:
+        store = get_feedback_store()
+        feedback_list = await store.get_user_feedback(current_user.username, limit=limit)
+
+        return {
+            "feedback": [f.model_dump() for f in feedback_list],
+            "count": len(feedback_list)
+        }
+    except Exception as e:
+        print(f"❌ Error getting user feedback: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve feedback: {str(e)}"
+        )
+
+
+@app.get("/feedback/analytics")
+async def get_deployment_analytics(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get aggregate deployment analytics.
+
+    Returns:
+    - Total designs tracked
+    - Deployment rate
+    - Success rate
+    - Average satisfaction rating
+    - Common issues encountered
+    """
+    try:
+        store = get_feedback_store()
+        analytics = await store.get_analytics()
+
+        return {
+            "analytics": analytics,
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        print(f"❌ Error getting analytics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve analytics: {str(e)}"
+        )

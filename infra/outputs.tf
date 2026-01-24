@@ -46,3 +46,19 @@ output "redis_primary_access_key" {
   value       = azurerm_redis_cache.main.primary_access_key
   sensitive   = true
 }
+
+output "cosmosdb_endpoint" {
+  description = "Azure Cosmos DB endpoint"
+  value       = azurerm_cosmosdb_account.main.endpoint
+}
+
+output "cosmosdb_primary_key" {
+  description = "Azure Cosmos DB primary key"
+  value       = azurerm_cosmosdb_account.main.primary_key
+  sensitive   = true
+}
+
+output "cosmosdb_database_name" {
+  description = "Azure Cosmos DB database name"
+  value       = azurerm_cosmosdb_sql_database.feedback.name
+}
