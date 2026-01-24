@@ -32,6 +32,7 @@ class CarlosState(TypedDict):
     design_tokens: list  # Token chunks from Carlos for streaming
     ronei_tokens: list  # Token chunks from Ronei for streaming
     terraform_code: str  # Generated Terraform infrastructure code
+    terraform_tokens: list  # Token chunks from Terraform Coder for streaming
 
 
 # Connection pool is now managed in llm_pool.py
@@ -343,7 +344,7 @@ async def recommender_node(state: CarlosState):
 
 
 async def terraform_coder_node(state: CarlosState):
-    """Generate Terraform code for the recommended design (uses caching)."""
+    """Generate Terraform code for the recommended design with streaming."""
     # Determine which design was recommended
     recommendation = state.get("recommendation", "")
     recommended_design = state.get("design_doc", "")  # Default to Carlos
@@ -361,12 +362,20 @@ async def terraform_coder_node(state: CarlosState):
         SystemMessage(content=TERRAFORM_CODER_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
+
     pool = get_pool()
+    terraform_code = ""
+    tokens = []
+
     async with pool.get_main_llm() as llm:
-        response = await llm.ainvoke(messages)
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            terraform_code += token
+            tokens.append(token)
+
     convo = state.get("conversation", "")
-    convo += "**Terraform Coder:**\n" + response.content + "\n\n"
-    return {"terraform_code": response.content, "conversation": convo}
+    convo += "**Terraform Coder:**\n" + terraform_code + "\n\n"
+    return {"terraform_code": terraform_code, "conversation": convo, "terraform_tokens": tokens}
 
 # Build graph
 builder = StateGraph(CarlosState)

@@ -55,7 +55,8 @@ export default function App() {
   });
   const [tokenCounts, setTokenCounts] = useState({
     carlos: 0,
-    ronei_design: 0
+    ronei_design: 0,
+    terraform_coder: 0
   });
 
   useEffect(() => {
@@ -137,6 +138,24 @@ export default function App() {
               }]);
             }
             return { ...prev, ronei_design: newCount };
+          });
+        } else if (event.agent === "terraform_coder") {
+          setTerraformCode(prev => prev + event.content);
+          setTokenCounts(prev => ({ ...prev, terraform_coder: prev.terraform_coder + 1 }));
+
+          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
+          setTokenCounts(prev => {
+            const newCount = prev.terraform_coder + 1;
+            if (newCount % 50 === 0) {
+              setActivityLog(activityPrev => [...activityPrev, {
+                id: Date.now() + Math.random(),
+                type: 'streaming',
+                agent: 'terraform_coder',
+                message: `Terraform Coder streaming... (${newCount} tokens)`,
+                timestamp: event.timestamp || new Date().toISOString()
+              }]);
+            }
+            return { ...prev, terraform_coder: newCount };
           });
         }
         break;
@@ -376,7 +395,8 @@ export default function App() {
     });
     setTokenCounts({
       carlos: 0,
-      ronei_design: 0
+      ronei_design: 0,
+      terraform_coder: 0
     });
     setIsDesigning(true);
 

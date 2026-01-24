@@ -4,11 +4,12 @@ import tempfile
 
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from contextlib import asynccontextmanager
+from slowapi.errors import RateLimitExceeded
 from graph import carlos_graph
 from llm_pool import get_pool
 from auth import (
@@ -23,6 +24,7 @@ from auth import (
 )
 from document_parser import extract_text_from_path, MAX_FILE_SIZE
 from document_tasks import create_task, get_task, get_user_tasks, TaskStatus
+from middleware.rate_limit import limiter, rate_limit_exceeded_handler
 import json
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -69,6 +71,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Carlos the Architect API", lifespan=lifespan)
 
+# Configure rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
 # Get allowed origins from environment or use defaults
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
 
@@ -101,7 +107,8 @@ async def register(user_data: UserCreate):
 
 
 @app.post("/auth/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("20/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     """Login and get access token."""
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
@@ -155,7 +162,9 @@ async def _process_document_background(task_id: str, file_path: str):
 
 
 @app.post("/upload-document")
+@limiter.limit("30/hour")
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_active_user)
@@ -258,12 +267,15 @@ async def list_user_documents(
 
 
 @app.post("/design")
-async def design(req: dict, current_user: User = Depends(get_current_active_user)):
+@limiter.limit("10/hour")
+async def design(request: Request, req: dict, current_user: User = Depends(get_current_active_user)):
     """Return a full design document and its security audit.
 
     Can be called in two phases:
     1. Initial call with 'text' (requirements) - returns clarifying questions
     2. Follow-up call with 'user_answers' - completes the design with refined requirements
+
+    Rate limited to 10 requests per hour per user.
     """
     print(f"Received request from {current_user.username}: {req}")
     try:
@@ -321,12 +333,15 @@ async def design(req: dict, current_user: User = Depends(get_current_active_user
 
 
 @app.post("/design-stream")
-async def design_stream(req: dict, current_user: User = Depends(get_current_active_user)):
+@limiter.limit("10/hour")
+async def design_stream(request: Request, req: dict, current_user: User = Depends(get_current_active_user)):
     """Stream design generation with real-time agent and token events.
 
     Can be called in two phases:
     1. Initial call with 'text' (requirements) - returns clarifying questions
     2. Follow-up call with 'user_answers' - completes the design with refined requirements
+
+    Rate limited to 10 requests per hour per user.
     """
     print(f"Received streaming request from {current_user.username}: {req}")
 
@@ -377,6 +392,17 @@ async def design_stream(req: dict, current_user: User = Depends(get_current_acti
                             token_event = {
                                 "type": "token",
                                 "agent": "ronei_design",
+                                "content": token,
+                                "timestamp": datetime.now(timezone.utc).isoformat()
+                            }
+                            yield f"data: {json.dumps(token_event)}\n\n"
+
+                    # For Terraform Coder: emit token events
+                    if "terraform_tokens" in node_output and node_output["terraform_tokens"]:
+                        for token in node_output["terraform_tokens"]:
+                            token_event = {
+                                "type": "token",
+                                "agent": "terraform_coder",
                                 "content": token,
                                 "timestamp": datetime.now(timezone.utc).isoformat()
                             }
