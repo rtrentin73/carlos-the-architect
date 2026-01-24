@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from slowapi.errors import RateLimitExceeded
 from graph import carlos_graph
 from llm_pool import get_pool
-from cache import get_cache, stream_cached_design
+from cache import get_cache, stream_cached_design, initialize_cache, close_cache
 from auth import (
     User,
     UserCreate,
@@ -56,9 +56,8 @@ async def lifespan(app: FastAPI):
     )
     print("🌐 HTTP connection pool initialized")
 
-    # Initialize design cache
-    cache = get_cache(ttl_hours=24)
-    print("📦 Design pattern cache initialized (24h TTL)")
+    # Initialize design cache (Redis if available, otherwise in-memory)
+    await initialize_cache(ttl_hours=24)
 
     print("✅ Backend ready to serve requests")
 
@@ -71,6 +70,9 @@ async def lifespan(app: FastAPI):
     if http_client:
         await http_client.aclose()
         print("🌐 HTTP connection pool closed")
+
+    # Close cache connection
+    await close_cache()
 
     print("✅ Shutdown complete")
 
@@ -369,7 +371,7 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                 "priorities": req.get("priorities", {}),
             }
         )
-        cached_design = cache.get(cache_key)
+        cached_design = await cache.get(cache_key)
         if cached_design:
             print(f"📦 Cache HIT for {current_user.username} (key: {cache_key})")
 
@@ -520,7 +522,7 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
             # Cache the result if appropriate (not clarification phase, has design)
             if cache_key and not clarification_needed and summary_data.get("design"):
                 if cache.should_cache(req.get("text", "")):
-                    cache.set(cache_key, summary_data)
+                    await cache.set(cache_key, summary_data)
                     print(f"📦 Cached design for key: {cache_key}")
 
             complete_summary = {
@@ -555,7 +557,7 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
 async def get_cache_stats(current_user: User = Depends(get_current_active_user)):
     """Get cache statistics."""
     cache = get_cache()
-    stats = cache.get_stats()
+    stats = await cache.get_stats()
     return {
         "cache": stats,
         "status": "enabled",
@@ -568,9 +570,9 @@ async def clear_cache(current_user: User = Depends(get_current_active_user)):
     """Clear the design pattern cache. Admin only."""
     # In production, add admin check here
     cache = get_cache()
-    old_stats = cache.get_stats()
-    cache.clear()
+    old_stats = await cache.get_stats()
+    cleared = await cache.clear()
     return {
         "message": "Cache cleared",
-        "cleared_entries": old_stats["entries"],
+        "cleared_entries": cleared,
     }
