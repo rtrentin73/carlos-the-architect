@@ -98,12 +98,16 @@ jobs:
         run: |
           az aks get-credentials --resource-group ${{ needs.terraform.outputs.resource_group }} --name ${{ needs.terraform.outputs.aks_cluster_name }} --overwrite-existing
 
+      - name: Create namespace
+        run: kubectl apply -f k8s/namespace.yaml
+
       - name: Create Kubernetes secrets
         run: |
           # Create ACR pull secret
           ACR_USERNAME=$(az acr credential show --name ${{ needs.terraform.outputs.acr_login_server }} --query username -o tsv)
           ACR_PASSWORD=$(az acr credential show --name ${{ needs.terraform.outputs.acr_login_server }} --query "passwords[0].value" -o tsv)
           kubectl create secret docker-registry acr-secret \
+            --namespace=carlos \
             --docker-server=${{ needs.terraform.outputs.acr_login_server }} \
             --docker-username=$ACR_USERNAME \
             --docker-password=$ACR_PASSWORD \
@@ -111,6 +115,7 @@ jobs:
 
           # Create app secrets
           kubectl create secret generic carlos-secrets \
+            --namespace=carlos \
             --from-literal=azure-openai-endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
             --from-literal=azure-openai-api-key=${{ secrets.AZURE_OPENAI_API_KEY }} \
             --dry-run=client -o yaml | kubectl apply -f -
@@ -175,6 +180,9 @@ jobs:
       - name: Get AKS credentials
         run: |
           az aks get-credentials --resource-group ${{ needs.terraform.outputs.resource_group }} --name ${{ needs.terraform.outputs.aks_cluster_name }} --overwrite-existing
+
+      - name: Ensure namespace exists
+        run: kubectl apply -f k8s/namespace.yaml
 
       - name: Deploy frontend to AKS
         run: |
