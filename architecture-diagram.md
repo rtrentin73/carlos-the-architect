@@ -43,6 +43,11 @@ flowchart TB
         GPT4["GPT-4 Model<br/>(Deployment)"]
     end
 
+    subgraph AzureServices["Azure Data Services"]
+        Redis["Azure Cache for Redis<br/>(Design Caching)"]
+        CosmosDB["Azure Cosmos DB<br/>(Feedback Storage)"]
+    end
+
     subgraph Storage["Client Storage"]
         LocalStorage["localStorage<br/>(Design History)"]
     end
@@ -83,11 +88,17 @@ flowchart TB
     Auditor -.->|LLM Calls| GPT4
     Recommender -.->|LLM Calls| GPT4
 
+    API -.->|Cache Check/Store| Redis
+    API -.->|Save Feedback| CosmosDB
+    UI -->|Submit Feedback| API
+
     style Carlos fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
     style Ronei fill:#fff3e0,stroke:#f57c00,stroke-width:3px
     style Auditor fill:#f3e5f5,stroke:#7b1fa2,stroke-width:3px
     style Recommender fill:#e8f5e9,stroke:#388e3c,stroke-width:3px
     style Decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px
+    style Redis fill:#dc382d,stroke:#a41e11,color:#fff
+    style CosmosDB fill:#0078d4,stroke:#005a9e,color:#fff
 ```
 
 ## Detailed Data Flow
@@ -97,6 +108,7 @@ sequenceDiagram
     actor User
     participant Frontend
     participant FastAPI
+    participant Redis
     participant LangGraph
     participant Carlos
     participant Ronei
@@ -104,10 +116,16 @@ sequenceDiagram
     participant Auditor
     participant Recommender
     participant AzureOpenAI
+    participant CosmosDB
 
     User->>Frontend: Enter requirements + settings
     Frontend->>FastAPI: POST /design
-    FastAPI->>LangGraph: Initialize workflow
+    FastAPI->>Redis: Check cache for similar design
+    alt Cache Hit
+        Redis-->>FastAPI: Return cached design
+        FastAPI-->>Frontend: Cached response (instant)
+    else Cache Miss
+        FastAPI->>LangGraph: Initialize workflow
 
     LangGraph->>Carlos: carlos_design_node()
     Carlos->>AzureOpenAI: Generate design (temp=0.7)
@@ -140,10 +158,19 @@ sequenceDiagram
         LangGraph->>Carlos: Retry with feedback
     end
 
-    FastAPI-->>Frontend: JSON bundle (all outputs)
+        FastAPI->>Redis: Cache design pattern
+        FastAPI-->>Frontend: JSON bundle (all outputs)
+    end
     Frontend->>Frontend: Render Blueprint + Reports
     Frontend->>User: Display complete analysis
     Frontend->>LocalStorage: Save to history
+
+    Note over User,CosmosDB: Feedback Loop (after deployment)
+    User->>Frontend: Submit deployment feedback
+    Frontend->>FastAPI: POST /feedback/deployment
+    FastAPI->>CosmosDB: Store feedback record
+    CosmosDB-->>FastAPI: Confirm save
+    FastAPI-->>Frontend: Success response
 ```
 
 ## Component Responsibilities
@@ -155,10 +182,13 @@ sequenceDiagram
 - **State**: localStorage for design history
 
 ### Backend (FastAPI)
-- **Main Endpoint**: POST /design
-- **Responsibilities**: Request validation, LangGraph orchestration, CORS handling
+- **Main Endpoints**:
+  - POST /design - Generate architecture designs
+  - POST /feedback/deployment - Submit deployment feedback
+  - GET /feedback/analytics - View feedback analytics
+- **Responsibilities**: Request validation, LangGraph orchestration, CORS handling, caching, feedback collection
 - **Port**: 8000
-- **Dependencies**: fastapi, uvicorn, python-dotenv
+- **Dependencies**: fastapi, uvicorn, python-dotenv, redis, azure-cosmos
 
 ### LangGraph Workflow
 - **State**: CarlosState (TypedDict) with requirements, designs, reports, audit status, conversation
@@ -218,58 +248,100 @@ sequenceDiagram
 - GPT-4 (or compatible chat model)
 - Streaming responses for real-time feedback
 
+### Data Services
+- Azure Cache for Redis (design pattern caching)
+- Azure Cosmos DB (serverless, feedback persistence)
+
 ## Environment Configuration
 
 Required environment variables (backend):
 ```bash
+# Azure OpenAI (required)
 AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com"
 AZURE_OPENAI_API_KEY="your-key"
 AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4o"
 AZURE_OPENAI_API_VERSION="2024-08-01-preview"
+
+# Azure Cache for Redis (optional - enables caching)
+REDIS_HOST="your-redis.redis.cache.windows.net"
+REDIS_PORT="6380"
+REDIS_PASSWORD="your-redis-key"
+REDIS_SSL="true"
+
+# Azure Cosmos DB (optional - enables feedback tracking)
+COSMOSDB_ENDPOINT="https://your-cosmos.documents.azure.com:443/"
+COSMOSDB_KEY="your-cosmos-key"
+COSMOSDB_DATABASE="carlos-feedback"
+COSMOSDB_CONTAINER="deployments"
 ```
 
 ## Deployment Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Production["Production Deployment"]
-        LB[Load Balancer]
+    subgraph Production["Production Deployment (Azure)"]
+        subgraph AKS["Azure Kubernetes Service"]
+            LB[Load Balancer]
 
-        subgraph WebTier["Web Tier"]
-            StaticHost[Static Host<br/>Vite Build]
+            subgraph WebTier["Web Tier"]
+                Frontend[Frontend Pods<br/>React + Nginx]
+            end
+
+            subgraph AppTier["Application Tier"]
+                Backend1[Backend Pod 1]
+                Backend2[Backend Pod 2]
+                BackendN[Backend Pod N]
+            end
+
+            HPA[Horizontal Pod Autoscaler]
         end
 
-        subgraph AppTier["Application Tier"]
-            ASGI1[Uvicorn Worker 1]
-            ASGI2[Uvicorn Worker 2]
-            ASGI3[Uvicorn Worker N]
+        subgraph DataServices["Data Services"]
+            Redis[Azure Cache for Redis<br/>Design Caching]
+            CosmosDB[Azure Cosmos DB<br/>Feedback Storage]
         end
 
         subgraph External["External Services"]
             AzureAI[Azure OpenAI]
-            KeyVault[Azure Key Vault<br/>Secrets]
+            ACR[Azure Container Registry]
         end
     end
 
+    subgraph CICD["CI/CD"]
+        GitHub[GitHub Actions]
+        Terraform[Terraform]
+    end
+
     Users([Users]) --> LB
-    LB --> StaticHost
-    LB --> ASGI1 & ASGI2 & ASGI3
-    ASGI1 & ASGI2 & ASGI3 --> AzureAI
-    ASGI1 & ASGI2 & ASGI3 -.->|Fetch Secrets| KeyVault
+    LB --> Frontend
+    LB --> Backend1 & Backend2 & BackendN
+    Backend1 & Backend2 & BackendN --> AzureAI
+    Backend1 & Backend2 & BackendN --> Redis
+    Backend1 & Backend2 & BackendN --> CosmosDB
+    HPA -.->|Scale| Backend1 & Backend2 & BackendN
+
+    GitHub -->|Deploy| AKS
+    GitHub -->|Push Images| ACR
+    Terraform -->|Provision| AKS & Redis & CosmosDB & ACR
 
     style AzureAI fill:#0078d4,stroke:#005a9e,color:#fff
-    style KeyVault fill:#0078d4,stroke:#005a9e,color:#fff
+    style Redis fill:#dc382d,stroke:#a41e11,color:#fff
+    style CosmosDB fill:#0078d4,stroke:#005a9e,color:#fff
+    style ACR fill:#0078d4,stroke:#005a9e,color:#fff
 ```
 
 ## Future Enhancements
 
-- [ ] Database persistence (replace localStorage)
-- [ ] User authentication & multi-tenancy
-- [ ] Real-time streaming of agent conversation
-- [ ] Export to Terraform/CloudFormation
+- [x] Database persistence (Azure Cosmos DB for feedback)
+- [x] User authentication & multi-tenancy
+- [x] Real-time streaming of agent conversation
+- [x] Export to Terraform/CloudFormation
+- [x] Design caching (Azure Cache for Redis)
+- [x] Deployment feedback tracking
 - [ ] Cost estimation integration
 - [ ] Diagram versioning and comparison
 - [ ] Integration with CI/CD pipelines
 - [ ] Multi-cloud support (Azure, GCP, AWS)
 - [ ] Custom agent personalities
 - [ ] Collaborative design reviews
+- [ ] Historical learning from feedback data
