@@ -39,9 +39,9 @@ resource "azurerm_kubernetes_cluster" "main" {
     os_disk_size_gb     = 30
     temporary_name_for_rotation = "temppool"
 
-    auto_scaling_enabled = true
-    min_count            = 1
-    max_count            = 5
+    enable_auto_scaling = true
+    min_count           = 1
+    max_count           = 5
   }
 
   identity {
