@@ -133,11 +133,10 @@ jobs:
             --from-literal=azure-openai-api-key=${{ secrets.AZURE_OPENAI_API_KEY }} \
             --from-literal=tavily-api-key=${{ secrets.TAVILY_API_KEY }} \
             --from-literal=redis-host=${{ needs.terraform.outputs.redis_hostname }} \
-            --from-literal=redis-password=${{ needs.terraform.outputs.redis_key }} \
-            --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \
-            --from-literal=cosmosdb-key=${{ needs.terraform.outputs.cosmosdb_key }} \
             --from-literal=redis-port=${{ needs.terraform.outputs.redis_port }} \
             --from-literal=redis-password=${{ needs.terraform.outputs.redis_password }} \
+            --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \
+            --from-literal=cosmosdb-key=${{ needs.terraform.outputs.cosmosdb_key }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend to AKS
