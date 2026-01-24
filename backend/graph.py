@@ -33,6 +33,14 @@ class CarlosState(TypedDict):
     ronei_tokens: list  # Token chunks from Ronei for streaming
     terraform_code: str  # Generated Terraform infrastructure code
     terraform_tokens: list  # Token chunks from Terraform Coder for streaming
+    # Token fields for all streaming agents
+    requirements_tokens: list  # Token chunks from Requirements Gathering
+    refine_tokens: list  # Token chunks from Refine Requirements
+    security_tokens: list  # Token chunks from Security Analyst
+    cost_tokens: list  # Token chunks from Cost Analyst
+    reliability_tokens: list  # Token chunks from Reliability Engineer
+    audit_tokens: list  # Token chunks from Auditor
+    recommender_tokens: list  # Token chunks from Recommender
 
 
 # Connection pool is now managed in llm_pool.py
@@ -40,32 +48,38 @@ class CarlosState(TypedDict):
 
 
 async def requirements_gathering_node(state: CarlosState):
-    """Ask clarifying questions about requirements before designing (uses mini model with caching)."""
+    """Ask clarifying questions about requirements before designing (uses mini model with streaming)."""
     pool = get_pool()
     messages = [
         SystemMessage(content=REQUIREMENTS_GATHERING_INSTRUCTIONS),
         HumanMessage(content=f"Initial User Requirements:\n{state['requirements']}")
     ]
+    response = ""
+    tokens = []
     async with pool.get_mini_llm() as llm:
-        response = await llm.ainvoke(messages)
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     convo = state.get("conversation", "")
-    convo += "**Requirements Team:**\n" + response.content + "\n\n"
+    convo += "**Requirements Team:**\n" + response + "\n\n"
 
     # Set refined_requirements to original for now - will be updated with user answers
     return {
         "refined_requirements": state['requirements'],
         "clarification_needed": True,
-        "conversation": convo
+        "conversation": convo,
+        "requirements_tokens": tokens
     }
 
 
 async def refine_requirements_node(state: CarlosState):
-    """Refine requirements based on user's answers (uses mini model with caching)."""
+    """Refine requirements based on user's answers (uses mini model with streaming)."""
     user_answers = state.get('user_answers', '')
 
     if not user_answers:
         # No answers provided, use original requirements
-        return {"refined_requirements": state['requirements']}
+        return {"refined_requirements": state['requirements'], "refine_tokens": []}
 
     # Create refined requirements by combining original + answers
     system_instruction = """Given the initial requirements and the user's answers to clarifying questions,
@@ -85,15 +99,21 @@ User's Answers to Clarifying Questions:
     ]
 
     pool = get_pool()
+    response = ""
+    tokens = []
     async with pool.get_mini_llm() as llm:
-        response = await llm.ainvoke(messages)
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     convo = state.get("conversation", "")
-    convo += "**Refined Requirements:**\n" + response.content + "\n\n"
+    convo += "**Refined Requirements:**\n" + response + "\n\n"
 
     return {
-        "refined_requirements": response.content,
+        "refined_requirements": response,
         "clarification_needed": False,
-        "conversation": convo
+        "conversation": convo,
+        "refine_tokens": tokens
     }
 
 
@@ -234,7 +254,7 @@ async def ronei_design_node(state: CarlosState):
 
 
 async def security_node(state: CarlosState):
-    """Security analyst reviews the design (uses mini model with caching)."""
+    """Security analyst reviews the design (uses mini model with streaming)."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
@@ -245,15 +265,20 @@ async def security_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
     pool = get_pool()
+    response = ""
+    tokens = []
     async with pool.get_mini_llm() as llm:
-        response = await llm.ainvoke(messages)
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     convo = state.get("conversation", "")
-    convo += "**Security Analyst:**\n" + response.content + "\n\n"
-    return {"security_report": response.content, "conversation": convo}
+    convo += "**Security Analyst:**\n" + response + "\n\n"
+    return {"security_report": response, "conversation": convo, "security_tokens": tokens}
 
 
 async def cost_node(state: CarlosState):
-    """Cost optimization specialist reviews the design (uses mini model with caching)."""
+    """Cost optimization specialist reviews the design (uses mini model with streaming)."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
@@ -264,15 +289,20 @@ async def cost_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
     pool = get_pool()
+    response = ""
+    tokens = []
     async with pool.get_mini_llm() as llm:
-        response = await llm.ainvoke(messages)
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     convo = state.get("conversation", "")
-    convo += "**Cost Specialist:**\n" + response.content + "\n\n"
-    return {"cost_report": response.content, "conversation": convo}
+    convo += "**Cost Specialist:**\n" + response + "\n\n"
+    return {"cost_report": response, "conversation": convo, "cost_tokens": tokens}
 
 
 async def reliability_node(state: CarlosState):
-    """SRE reviews the design (uses mini model with caching)."""
+    """SRE reviews the design (uses mini model with streaming)."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
@@ -283,14 +313,19 @@ async def reliability_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
     pool = get_pool()
+    response = ""
+    tokens = []
     async with pool.get_mini_llm() as llm:
-        response = await llm.ainvoke(messages)
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     convo = state.get("conversation", "")
-    convo += "**SRE:**\n" + response.content + "\n\n"
-    return {"reliability_report": response.content, "conversation": convo}
+    convo += "**SRE:**\n" + response + "\n\n"
+    return {"reliability_report": response, "conversation": convo, "reliability_tokens": tokens}
 
 async def auditor_node(state: CarlosState):
-    """Final auditor aggregates all specialist feedback (uses caching)."""
+    """Final auditor aggregates all specialist feedback (uses streaming)."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
@@ -303,16 +338,21 @@ async def auditor_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
     pool = get_pool()
+    response = ""
+    tokens = []
     async with pool.get_main_llm() as llm:
-        response = await llm.ainvoke(messages)
-    status = "approved" if "APPROVED" in response.content.upper() else "needs_revision"
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
+    status = "approved" if "APPROVED" in response.upper() else "needs_revision"
     convo = state.get("conversation", "")
-    convo += "**Chief Auditor:**\n" + response.content + "\n\n"
-    return {"audit_status": status, "audit_report": response.content, "conversation": convo}
+    convo += "**Chief Auditor:**\n" + response + "\n\n"
+    return {"audit_status": status, "audit_report": response, "conversation": convo, "audit_tokens": tokens}
 
 
 async def recommender_node(state: CarlosState):
-    """Recommend Carlos vs Ronei based on all outputs (uses caching)."""
+    """Recommend Carlos vs Ronei based on all outputs (uses streaming)."""
     user_content = (
         f"=== User Requirements ===\n{state['requirements']}\n\n"
         f"=== Carlos' Design ===\n{state.get('design_doc', '')}\n\n"
@@ -327,9 +367,14 @@ async def recommender_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
     pool = get_pool()
+    response = ""
+    tokens = []
     async with pool.get_main_llm() as llm:
-        response = await llm.ainvoke(messages)
-    content = (response.content or "").strip()
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
+    content = response.strip()
     upper = content.upper()
     if not (upper.startswith("RECOMMEND: CARLOS") or upper.startswith("RECOMMEND: RONEI")):
         if "CARLOS" in upper and "RONEI" not in upper:
@@ -340,7 +385,7 @@ async def recommender_node(state: CarlosState):
             content = "RECOMMEND: CARLOS\n\n" + content
     convo = state.get("conversation", "")
     convo += "**Design Recommender:**\n" + content + "\n\n"
-    return {"recommendation": content, "conversation": convo}
+    return {"recommendation": content, "conversation": convo, "recommender_tokens": tokens}
 
 
 async def terraform_coder_node(state: CarlosState):
