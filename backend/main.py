@@ -37,6 +37,10 @@ from auth import (
     create_user,
     get_current_active_user,
     require_admin,
+    seed_admin_user,
+    get_all_users,
+    set_user_admin,
+    set_user_disabled,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from document_parser import extract_text_from_path, MAX_FILE_SIZE
@@ -82,6 +86,9 @@ async def lifespan(app: FastAPI):
     # Initialize audit store (Cosmos DB if available, otherwise in-memory)
     await initialize_audit_store()
     print("📋 Audit logging initialized")
+
+    # Seed default admin user
+    seed_admin_user()
 
     print("✅ Backend ready to serve requests")
 
@@ -865,3 +872,139 @@ async def get_audit_stats(
     except Exception as e:
         print(f"❌ Error getting audit stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get audit stats: {str(e)}")
+
+
+# ============================================================================
+# Admin User Management Endpoints
+# ============================================================================
+
+@app.get("/admin/users")
+async def list_users(current_user: User = Depends(require_admin)):
+    """
+    List all registered users.
+
+    Admin access required.
+    """
+    users = get_all_users()
+    return {
+        "users": [u.model_dump() for u in users],
+        "count": len(users),
+    }
+
+
+@app.post("/admin/users/{username}/promote")
+async def promote_user_to_admin(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Promote a user to admin role.
+
+    Admin access required.
+    """
+    user = set_user_admin(username, is_admin=True)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.WARNING,
+        endpoint=f"/admin/users/{username}/promote",
+        method="POST",
+        metadata={"target_user": username, "action": "promote_to_admin"},
+    ))
+
+    return {"message": f"User {username} promoted to admin", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/demote")
+async def demote_user_from_admin(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Remove admin role from a user.
+
+    Admin access required. Cannot demote yourself.
+    """
+    if username == current_user.username:
+        raise HTTPException(status_code=400, detail="Cannot demote yourself")
+
+    user = set_user_admin(username, is_admin=False)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.WARNING,
+        endpoint=f"/admin/users/{username}/demote",
+        method="POST",
+        metadata={"target_user": username, "action": "demote_from_admin"},
+    ))
+
+    return {"message": f"User {username} demoted from admin", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/disable")
+async def disable_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Disable a user account.
+
+    Admin access required. Cannot disable yourself.
+    """
+    if username == current_user.username:
+        raise HTTPException(status_code=400, detail="Cannot disable yourself")
+
+    user = set_user_disabled(username, disabled=True)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.WARNING,
+        endpoint=f"/admin/users/{username}/disable",
+        method="POST",
+        metadata={"target_user": username, "action": "disable_account"},
+    ))
+
+    return {"message": f"User {username} disabled", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/enable")
+async def enable_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Re-enable a disabled user account.
+
+    Admin access required.
+    """
+    user = set_user_disabled(username, disabled=False)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.INFO,
+        endpoint=f"/admin/users/{username}/enable",
+        method="POST",
+        metadata={"target_user": username, "action": "enable_account"},
+    ))
+
+    return {"message": f"User {username} enabled", "user": user.model_dump()}

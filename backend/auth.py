@@ -50,6 +50,66 @@ class TokenData(BaseModel):
 users_db: dict[str, dict] = {}
 
 
+def seed_admin_user():
+    """Seed the default admin user on startup."""
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+    admin_password = os.getenv("ADMIN_PASSWORD", "carlos-admin-2024")
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@carlos.ai")
+
+    if admin_username not in users_db:
+        hashed_password = get_password_hash(admin_password)
+        users_db[admin_username] = {
+            "username": admin_username,
+            "email": admin_email,
+            "hashed_password": hashed_password,
+            "disabled": False,
+            "is_admin": True,
+        }
+        print(f"  Seeded admin user: {admin_username}")
+    return admin_username
+
+
+def get_all_users() -> list[User]:
+    """Get all users (admin only)."""
+    return [
+        User(
+            username=u["username"],
+            email=u.get("email"),
+            disabled=u.get("disabled", False),
+            is_admin=u.get("is_admin", False),
+        )
+        for u in users_db.values()
+    ]
+
+
+def set_user_admin(username: str, is_admin: bool) -> Optional[User]:
+    """Promote or demote a user's admin status."""
+    if username not in users_db:
+        return None
+    users_db[username]["is_admin"] = is_admin
+    user_dict = users_db[username]
+    return User(
+        username=user_dict["username"],
+        email=user_dict.get("email"),
+        disabled=user_dict.get("disabled", False),
+        is_admin=user_dict.get("is_admin", False),
+    )
+
+
+def set_user_disabled(username: str, disabled: bool) -> Optional[User]:
+    """Enable or disable a user account."""
+    if username not in users_db:
+        return None
+    users_db[username]["disabled"] = disabled
+    user_dict = users_db[username]
+    return User(
+        username=user_dict["username"],
+        email=user_dict.get("email"),
+        disabled=user_dict.get("disabled", False),
+        is_admin=user_dict.get("is_admin", False),
+    )
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
