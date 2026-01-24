@@ -11,6 +11,12 @@ export default function Dashboard() {
   const [debugLog, setDebugLog] = useState([]);
   const [showDebug, setShowDebug] = useState(true);
 
+  // Requirements clarification state
+  const [clarificationNeeded, setClarificationNeeded] = useState(false);
+  const [clarificationQuestions, setClarificationQuestions] = useState("");
+  const [userAnswers, setUserAnswers] = useState("");
+  const [originalRequirements, setOriginalRequirements] = useState("");
+
   const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
 
   // Splash screen effect
@@ -27,20 +33,33 @@ export default function Dashboard() {
     setDebugLog(prev => [...prev, logEntry]);
   };
 
-  const runCarlos = async () => {
-    if (!input.trim()) return;
-    
+  const runCarlos = async (providedAnswers = null) => {
+    if (!input.trim() && !providedAnswers) return;
+
     setDesignDoc("");
-    setDebugLog([]); 
+    if (!providedAnswers) {
+      setDebugLog([]);
+      setOriginalRequirements(input);
+    }
     setStatus("designing");
-    
-    addLog('INFO', '📤 Sending request to Carlos...', { requirements: input });
+
+    // Build request body
+    const requestBody = { text: input };
+    if (providedAnswers) {
+      requestBody.user_answers = providedAnswers;
+      addLog('INFO', '📤 Sending answers to Carlos and Ronei...', { answers: providedAnswers });
+    } else {
+      addLog('INFO', '📤 Sending request to Carlos...', { requirements: input });
+    }
 
     try {
-      const response = await fetch(`${backendBaseUrl}/design`, {
+      const response = await fetch(`${backendBaseUrl}/design-stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requirements: input }),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -48,6 +67,8 @@ export default function Dashboard() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let chunkCount = 0;
+      let carlosDesign = "";
+      let roneiDesign = "";
 
       addLog('INFO', '🔄 Connection established. Streaming design...');
 
@@ -61,29 +82,85 @@ export default function Dashboard() {
         chunkCount++;
         const chunk = decoder.decode(value);
         const lines = chunk.split("\n");
-        
-        lines.forEach((line) => {
+
+        for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
               const jsonStr = line.replace("data: ", "");
-              if (jsonStr === "DONE") return;
-              
-              const data = JSON.parse(jsonStr);
-              if (data.token) setDesignDoc((prev) => prev + data.token);
-              if (data.status) setStatus(data.status);
-              
+              if (!jsonStr.trim()) continue;
+
+              const event = JSON.parse(jsonStr);
+
+              // Handle different event types
+              if (event.type === 'agent_start') {
+                addLog('STATUS', `🤖 ${event.agent} started working...`);
+              } else if (event.type === 'token') {
+                // Stream tokens from Carlos or Ronei
+                if (event.agent === 'carlos') {
+                  carlosDesign += event.content;
+                  setDesignDoc(carlosDesign);
+                } else if (event.agent === 'ronei_design') {
+                  roneiDesign += event.content;
+                }
+              } else if (event.type === 'field_update') {
+                addLog('DATA', `📊 ${event.field} updated`);
+              } else if (event.type === 'agent_complete') {
+                addLog('SUCCESS', `✅ ${event.agent} completed`);
+              } else if (event.type === 'complete') {
+                // Final event with complete state
+                const summary = event.summary;
+
+                // Check if clarification is needed
+                if (summary.clarification_needed) {
+                  setClarificationNeeded(true);
+                  setClarificationQuestions(summary.agent_chat);
+                  setDesignDoc(summary.agent_chat);
+                  setStatus("awaiting_answers");
+                  addLog('INFO', '❓ Carlos and Ronei need more information');
+                } else {
+                  // Show full design with all sections
+                  let fullDoc = "# Carlos's Design\n\n" + summary.design + "\n\n";
+                  fullDoc += "---\n\n# Ronei's Design\n\n" + summary.ronei_design + "\n\n";
+                  fullDoc += "---\n\n# Security Report\n\n" + summary.security_report + "\n\n";
+                  fullDoc += "---\n\n# Cost Analysis\n\n" + summary.cost_report + "\n\n";
+                  fullDoc += "---\n\n# Reliability Report\n\n" + summary.reliability_report + "\n\n";
+                  fullDoc += "---\n\n# Audit Report\n\n" + summary.audit_report + "\n\n";
+                  fullDoc += "---\n\n# Recommendation\n\n" + summary.recommendation + "\n\n";
+                  if (summary.terraform_code) {
+                    fullDoc += "---\n\n# Terraform Code\n\n" + summary.terraform_code;
+                  }
+                  setDesignDoc(fullDoc);
+                  setClarificationNeeded(false);
+                  setStatus("idle");
+                }
+              } else if (event.type === 'error') {
+                throw new Error(event.message);
+              }
+
             } catch (e) {
-              addLog('ERROR', 'Failed to parse stream line', e.message);
+              addLog('ERROR', 'Failed to parse stream event', e.message);
             }
           }
-        });
+        }
       }
-      setStatus("idle");
-      
+
+      if (status === "designing") {
+        setStatus("idle");
+      }
+
     } catch (error) {
       addLog('ERROR', '❌ Architect failed to respond', { message: error.message });
       setStatus("error");
     }
+  };
+
+  const submitAnswers = async () => {
+    if (!userAnswers.trim()) return;
+
+    setClarificationNeeded(false);
+    setInput(originalRequirements); // Restore original requirements for the second call
+    await runCarlos(userAnswers);
+    setUserAnswers(""); // Clear answers after submission
   };
 
   if (loading) return <SplashScreen />;
@@ -101,7 +178,11 @@ export default function Dashboard() {
               alt="Carlos AI" 
               className="w-12 h-12 rounded-full object-cover border-2 border-blue-500 shadow-lg group-hover:scale-110 transition-transform duration-200"
             />
-            <span className={`absolute bottom-0 right-0 block h-3 w-3 rounded-full ring-2 ring-slate-900 ${status === 'designing' ? 'bg-blue-400 animate-ping' : 'bg-green-500'}`} />
+            <span className={`absolute bottom-0 right-0 block h-3 w-3 rounded-full ring-2 ring-slate-900 ${
+              status === 'designing' ? 'bg-blue-400 animate-ping' :
+              status === 'awaiting_answers' ? 'bg-amber-400 animate-pulse' :
+              'bg-green-500'
+            }`} />
           </div>
           <div className="flex flex-col">
             <h1 className="font-bold text-white text-lg leading-tight">Carlos AI</h1>
@@ -130,10 +211,15 @@ export default function Dashboard() {
         <header className="p-4 border-b bg-white flex justify-between items-center px-8 shadow-sm">
           <span className="text-xs uppercase tracking-widest font-bold text-slate-400">Azure Design Studio</span>
           <div className="flex items-center gap-4">
-            {status !== 'idle' && status !== 'error' && (
+            {status === 'designing' && (
                <div className="flex items-center gap-2 text-blue-600">
                  <Loader2 className="animate-spin" size={16}/>
                  <span className="text-sm font-bold tracking-tight uppercase">Carlos is {status}...</span>
+               </div>
+            )}
+            {status === 'awaiting_answers' && (
+               <div className="flex items-center gap-2 text-amber-600">
+                 <span className="text-sm font-bold tracking-tight uppercase">⏳ Awaiting your answers</span>
                </div>
             )}
             {status === 'error' && <span className="text-sm font-bold text-red-500">SYSTEM ERROR</span>}
@@ -144,7 +230,19 @@ export default function Dashboard() {
           {/* Markdown Output Area */}
           <div className={`${showDebug ? 'w-2/3' : 'w-full'} transition-all duration-300`}>
             <div className="max-w-4xl mx-auto bg-white p-12 rounded-2xl shadow-xl border border-slate-200 min-h-full prose prose-slate lg:prose-xl">
-              {designDoc ? <ReactMarkdown>{designDoc}</ReactMarkdown> : <EmptyState />}
+              {clarificationNeeded ? (
+                <ClarificationForm
+                  questions={clarificationQuestions}
+                  userAnswers={userAnswers}
+                  setUserAnswers={setUserAnswers}
+                  onSubmit={submitAnswers}
+                  loading={status === 'designing'}
+                />
+              ) : designDoc ? (
+                <ReactMarkdown>{designDoc}</ReactMarkdown>
+              ) : (
+                <EmptyState />
+              )}
             </div>
           </div>
 
@@ -186,25 +284,81 @@ export default function Dashboard() {
         </div>
 
         {/* Requirements Input Area */}
-        <footer className="p-8 bg-white border-t border-slate-200 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
-          <div className="max-w-4xl mx-auto flex gap-4">
-            <input 
-              className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
-              placeholder="Tell Carlos your cloud requirements (e.g. 'Highly available AKS cluster on Azure')..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && runCarlos()}
-            />
-            <button 
-              onClick={runCarlos}
-              disabled={!input.trim() || status === 'designing'}
-              className="bg-blue-600 text-white px-10 py-4 rounded-xl font-bold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-blue-500/20"
-            >
-              Ask Carlos
-            </button>
-          </div>
-        </footer>
+        {!clarificationNeeded && (
+          <footer className="p-8 bg-white border-t border-slate-200 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
+            <div className="max-w-4xl mx-auto flex gap-4">
+              <input
+                className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
+                placeholder="Tell Carlos your cloud requirements (e.g. 'Highly available AKS cluster on Azure')..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !clarificationNeeded && runCarlos()}
+                disabled={status === 'designing'}
+              />
+              <button
+                onClick={() => runCarlos()}
+                disabled={!input.trim() || status === 'designing'}
+                className="bg-blue-600 text-white px-10 py-4 rounded-xl font-bold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-blue-500/20"
+              >
+                {status === 'designing' ? 'Designing...' : 'Ask Carlos'}
+              </button>
+            </div>
+          </footer>
+        )}
       </main>
+    </div>
+  );
+}
+
+// Clarification Form Component
+function ClarificationForm({ questions, userAnswers, setUserAnswers, onSubmit, loading }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-lg">
+        <div className="flex items-start gap-3">
+          <div className="text-3xl">💬</div>
+          <div>
+            <h3 className="font-bold text-blue-900 text-xl mb-2">Carlos and Ronei Need More Information</h3>
+            <p className="text-blue-700 text-sm">
+              Please answer the questions below to help them create better architecture designs for you.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+        <ReactMarkdown className="prose prose-slate max-w-none">{questions}</ReactMarkdown>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-3">
+          Your Answers
+        </label>
+        <textarea
+          value={userAnswers}
+          onChange={(e) => setUserAnswers(e.target.value)}
+          placeholder="Please provide answers to the questions above. Be as specific as possible..."
+          className="w-full h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y"
+          disabled={loading}
+        />
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onSubmit}
+          disabled={!userAnswers.trim() || loading}
+          className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin" size={18} />
+              Processing...
+            </>
+          ) : (
+            'Submit Answers & Continue'
+          )}
+        </button>
+      </div>
     </div>
   );
 }
