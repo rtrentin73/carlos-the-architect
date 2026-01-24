@@ -11,6 +11,7 @@ from tasks import (
     RONEI_INSTRUCTIONS,
     DESIGN_RECOMMENDER_INSTRUCTIONS,
     TERRAFORM_CODER_INSTRUCTIONS,
+    TERRAFORM_VALIDATOR_INSTRUCTIONS,
 )
 from llm_pool import get_pool
 from schemas import (
@@ -42,6 +43,8 @@ class CarlosState(TypedDict):
     ronei_tokens: list  # Token chunks from Ronei for streaming
     terraform_code: str  # Generated Terraform infrastructure code
     terraform_tokens: list  # Token chunks from Terraform Coder for streaming
+    terraform_validation: str  # Validation report from Terraform Validator
+    terraform_validator_tokens: list  # Token chunks from Terraform Validator for streaming
     # Token fields for all streaming agents
     requirements_tokens: list  # Token chunks from Requirements Gathering
     refine_tokens: list  # Token chunks from Refine Requirements
@@ -507,6 +510,42 @@ async def terraform_coder_node(state: CarlosState):
     convo += "**Terraform Coder:**\n" + terraform_code + "\n\n"
     return {"terraform_code": terraform_code, "conversation": convo, "terraform_tokens": tokens}
 
+
+async def terraform_validator_node(state: CarlosState):
+    """Validate the generated Terraform code with streaming."""
+    terraform_code = state.get("terraform_code", "")
+    recommendation = state.get("recommendation", "")
+    recommended_design = state.get("design_doc", "")
+
+    if "RECOMMEND: RONEI" in recommendation.upper():
+        recommended_design = state.get("ronei_design", "")
+
+    user_content = (
+        f"=== User Requirements ===\n{state['requirements']}\n\n"
+        f"=== Recommended Design ===\n{recommended_design}\n\n"
+        f"=== Generated Terraform Code ===\n{terraform_code}\n\n"
+        f"Please validate this Terraform code."
+    )
+    messages = [
+        SystemMessage(content=TERRAFORM_VALIDATOR_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+
+    pool = get_pool()
+    validation_report = ""
+    tokens = []
+
+    async with pool.get_mini_llm() as llm:
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            validation_report += token
+            tokens.append(token)
+
+    convo = state.get("conversation", "")
+    convo += "**Terraform Validator:**\n" + validation_report + "\n\n"
+    return {"terraform_validation": validation_report, "conversation": convo, "terraform_validator_tokens": tokens}
+
+
 # Build graph
 builder = StateGraph(CarlosState)
 builder.add_node("requirements_gathering", requirements_gathering_node)
@@ -519,6 +558,7 @@ builder.add_node("reliability", reliability_node)
 builder.add_node("audit", auditor_node)
 builder.add_node("recommender", recommender_node)
 builder.add_node("terraform_coder", terraform_coder_node)
+builder.add_node("terraform_validator", terraform_validator_node)
 
 # Conditional start: if user_answers exist, skip to refine_requirements, otherwise gather requirements
 def should_gather_requirements(state):
@@ -560,6 +600,7 @@ builder.add_conditional_edges(
 )
 
 builder.add_edge("recommender", "terraform_coder")
-builder.add_edge("terraform_coder", END)
+builder.add_edge("terraform_coder", "terraform_validator")
+builder.add_edge("terraform_validator", END)
 
 carlos_graph = builder.compile()

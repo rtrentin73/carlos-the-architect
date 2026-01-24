@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import { useAuth } from './contexts/AuthContext';
@@ -34,6 +34,8 @@ export default function App() {
   const [reliabilityReport, setReliabilityReport] = useState("");
   const [recommendation, setRecommendation] = useState("");
   const [terraformCode, setTerraformCode] = useState("");
+  const [terraformValidation, setTerraformValidation] = useState("");
+  const [copied, setCopied] = useState(false);
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
 
@@ -122,6 +124,7 @@ export default function App() {
           carlos: { setter: setDesign, name: 'Carlos' },
           ronei_design: { setter: setRoneiDesign, name: 'Ronei' },
           terraform_coder: { setter: setTerraformCode, name: 'Terraform Coder' },
+          terraform_validator: { setter: setTerraformValidation, name: 'Terraform Validator' },
           requirements_gathering: { setter: setStreamingQuestions, name: 'Requirements Team' },
           refine_requirements: { setter: setAgentChat, name: 'Requirements Refiner' },
           security: { setter: setSecurityReport, name: 'Security Analyst' },
@@ -161,7 +164,8 @@ export default function App() {
           audit_report: 'Chief Auditor Verdict',
           audit_status: 'Audit Status',
           recommendation: 'Design Recommendation',
-          terraform_code: 'Terraform Infrastructure Code'
+          terraform_code: 'Terraform Infrastructure Code',
+          terraform_validation: 'Terraform Validation Report'
         };
 
         // Add to activity log
@@ -199,6 +203,10 @@ export default function App() {
           case "terraform_code":
             setTerraformCode(event.content);
             console.log("Terraform code generated");
+            break;
+          case "terraform_validation":
+            setTerraformValidation(event.content);
+            console.log("Terraform validation completed");
             break;
         }
         break;
@@ -242,6 +250,7 @@ export default function App() {
           reliabilityReport: summary.reliability_report || "",
           recommendation: summary.recommendation || "",
           terraformCode: summary.terraform_code || "",
+          terraformValidation: summary.terraform_validation || "",
           agentChat: summary.agent_chat || "",
           carlosTokens: tokenCounts.carlos,
           roneiTokens: tokenCounts.ronei_design,
@@ -251,6 +260,10 @@ export default function App() {
         setHistory(updatedHistory);
         localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
         setAgentChat(summary.agent_chat || "");
+        // Set terraform validation from summary (in case streaming was missed)
+        if (summary.terraform_validation) {
+          setTerraformValidation(summary.terraform_validation);
+        }
         break;
 
       case "error":
@@ -398,6 +411,7 @@ export default function App() {
     setAuditStatus("");
     setRecommendation("");
     setTerraformCode("");
+    setTerraformValidation("");
     setAgentChat("");
     setStreamingQuestions("");
     setActivityLog([]);
@@ -560,6 +574,10 @@ export default function App() {
       "## Terraform Infrastructure Code",
       "",
       terraformCode || "_No Terraform code generated._",
+      "",
+      "## Terraform Validation Report",
+      "",
+      terraformValidation || "_No validation report generated._",
       "",
       "## Agent Conversation",
       "",
@@ -780,6 +798,18 @@ export default function App() {
                           Terraform Code
                         </button>
                       )}
+                      {terraformValidation && (
+                        <button
+                          onClick={() => setBlueprintTab("validation")}
+                          className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
+                            blueprintTab === "validation"
+                              ? "border-b-2 border-orange-500 text-orange-600"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Validation
+                        </button>
+                      )}
                     </div>
 
                     {/* Design Content */}
@@ -795,8 +825,25 @@ export default function App() {
                       </div>
                     )}
                     {blueprintTab === "terraform" && terraformCode && (
+                      <TerraformCodeView
+                        code={terraformCode}
+                        copied={copied}
+                        onCopy={() => {
+                          // Extract raw code blocks from markdown
+                          const codeBlockRegex = /```(?:hcl|terraform)?\n([\s\S]*?)```/g;
+                          const matches = [...terraformCode.matchAll(codeBlockRegex)];
+                          const rawCode = matches.length > 0
+                            ? matches.map(m => m[1].trim()).join('\n\n')
+                            : terraformCode;
+                          navigator.clipboard.writeText(rawCode);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                      />
+                    )}
+                    {blueprintTab === "validation" && terraformValidation && (
                       <div className="prose prose-slate max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{terraformCode}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{terraformValidation}</ReactMarkdown>
                       </div>
                     )}
                     {blueprintTab === "carlos" && !design && (
@@ -941,6 +988,7 @@ export default function App() {
                           setReliabilityReport(entry.reliabilityReport || "");
                           setRecommendation(entry.recommendation || "");
                           setTerraformCode(entry.terraformCode || "");
+                          setTerraformValidation(entry.terraformValidation || "");
                           setAgentChat(entry.agentChat || "");
                         }}
                       >
@@ -1500,6 +1548,42 @@ function getAgentVisuals(agent) {
     labelColor: "text-slate-600",
     icon: <MessageCircle size={18} />,
   };
+}
+
+// Component to display Terraform code with copy button
+function TerraformCodeView({ code, copied, onCopy }) {
+  return (
+    <div className="relative">
+      {/* Copy button */}
+      <div className="absolute top-0 right-0 z-10">
+        <button
+          onClick={onCopy}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            copied
+              ? 'bg-green-100 text-green-700 border border-green-300'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+          }`}
+        >
+          {copied ? (
+            <>
+              <Check size={16} />
+              Copied!
+            </>
+          ) : (
+            <>
+              <Copy size={16} />
+              Copy Code
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Code display */}
+      <div className="prose prose-slate max-w-none pt-12">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{code}</ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 // Component to show streaming questions from Requirements Team
