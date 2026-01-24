@@ -19,6 +19,15 @@ from feedback import (
     initialize_feedback_store,
     close_feedback_store,
 )
+from audit import (
+    AuditRecord,
+    AuditAction,
+    AuditSeverity,
+    AuditQueryParams,
+    get_audit_store,
+    initialize_audit_store,
+    close_audit_store,
+)
 from auth import (
     User,
     UserCreate,
@@ -39,6 +48,7 @@ from fastapi.responses import RedirectResponse
 from document_parser import extract_text_from_path, MAX_FILE_SIZE
 from document_tasks import create_task, get_task, get_user_tasks, TaskStatus
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from middleware.audit import AuditMiddleware
 import json
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -95,6 +105,9 @@ async def lifespan(app: FastAPI):
 
     # Close feedback store
     await close_feedback_store()
+
+    # Close audit store
+    await close_audit_store()
 
     print("✅ Shutdown complete")
 
