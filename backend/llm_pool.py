@@ -74,7 +74,6 @@ def create_llm(temperature: float = 0.7, use_mini: bool = False):
             base_url=base_url,
             api_key=api_key,
             temperature=temperature,
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION") or get_github_variable("AZURE_OPENAI_API_VERSION") or "2024-08-01-preview",
             default_headers={"api-key": api_key},
         )
     else:
