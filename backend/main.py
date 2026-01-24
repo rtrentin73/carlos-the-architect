@@ -3,7 +3,7 @@ import os
 
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -18,6 +18,7 @@ from auth import (
     get_current_active_user,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
+from document_parser import extract_text_from_file
 import json
 from datetime import datetime, timezone, timedelta
 
@@ -69,6 +70,41 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 async def get_me(current_user: User = Depends(get_current_active_user)):
     """Get current user info."""
     return current_user
+
+
+@app.post("/upload-document")
+async def upload_document(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Upload a document and extract its text content.
+
+    Supports: PDF, DOCX, TXT, MD, XLSX (max 10MB)
+
+    Returns the extracted text that can be merged with user requirements.
+    """
+    print(f"Document upload from {current_user.username}: {file.filename}")
+
+    try:
+        # Extract text from the uploaded file
+        extracted_text = await extract_text_from_file(file)
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "extracted_text": extracted_text,
+            "message": f"📄 {file.filename} received by Carlos and Ronei"
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        print(f"Error uploading document: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to process document: {str(e)}"
+        )
+
 
 @app.post("/design")
 async def design(req: dict, current_user: User = Depends(get_current_active_user)):
