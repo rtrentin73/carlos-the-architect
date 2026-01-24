@@ -326,6 +326,12 @@ async def design(request: Request, req: dict, current_user: User = Depends(get_c
             "cost_report": cost_report,
             "reliability_report": reliability_report,
             "clarification_needed": False,
+            # Structured data for programmatic access
+            "structured_data": {
+                "security": result.get("security_data"),
+                "cost": result.get("cost_data"),
+                "reliability": result.get("reliability_data"),
+            },
         }
     except Exception as e:
         print(f"Error in design endpoint: {e}")
@@ -463,6 +469,12 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                     "reliability_report": final_state.get("reliability_report", ""),
                     "terraform_code": final_state.get("terraform_code", ""),
                     "clarification_needed": clarification_needed,
+                    # Structured data for programmatic access
+                    "structured_data": {
+                        "security": final_state.get("security_data"),
+                        "cost": final_state.get("cost_data"),
+                        "reliability": final_state.get("reliability_data"),
+                    },
                 },
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }

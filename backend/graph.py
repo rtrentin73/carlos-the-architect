@@ -1,4 +1,4 @@
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, Optional
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage
 from tasks import (
@@ -13,7 +13,16 @@ from tasks import (
     TERRAFORM_CODER_INSTRUCTIONS,
 )
 from llm_pool import get_pool
+from schemas import (
+    CostAnalysis,
+    SecurityAnalysis,
+    ReliabilityMetrics,
+    format_cost_analysis,
+    format_security_analysis,
+    format_reliability_analysis,
+)
 import operator
+import json
 
 class CarlosState(TypedDict):
     requirements: str
@@ -41,6 +50,10 @@ class CarlosState(TypedDict):
     reliability_tokens: list  # Token chunks from Reliability Engineer
     audit_tokens: list  # Token chunks from Auditor
     recommender_tokens: list  # Token chunks from Recommender
+    # Structured data fields for programmatic access
+    cost_data: Optional[dict]  # Structured cost analysis data
+    security_data: Optional[dict]  # Structured security analysis data
+    reliability_data: Optional[dict]  # Structured reliability metrics data
 
 
 # Connection pool is now managed in llm_pool.py
@@ -254,11 +267,11 @@ async def ronei_design_node(state: CarlosState):
 
 
 async def security_node(state: CarlosState):
-    """Security analyst reviews the design (uses mini model with streaming)."""
+    """Security analyst reviews the design with structured JSON output."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
-        f"Please review both designs from a security perspective."
+        f"Please review both designs from a security perspective. Respond with JSON only."
     )
     messages = [
         SystemMessage(content=SECURITY_ANALYST_INSTRUCTIONS),
@@ -272,17 +285,41 @@ async def security_node(state: CarlosState):
             token = chunk.content
             response += token
             tokens.append(token)
+
+    # Parse JSON and format as markdown
+    security_data = None
+    security_report = response
+    try:
+        # Extract JSON from response (handle markdown code blocks)
+        json_str = response
+        if "```json" in response:
+            json_str = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            json_str = response.split("```")[1].split("```")[0].strip()
+
+        security_data = json.loads(json_str)
+        security_analysis = SecurityAnalysis(**security_data)
+        security_report = format_security_analysis(security_analysis)
+    except Exception as e:
+        print(f"⚠️  Failed to parse structured security output: {e}")
+        # Keep original response as fallback
+
     convo = state.get("conversation", "")
-    convo += "**Security Analyst:**\n" + response + "\n\n"
-    return {"security_report": response, "conversation": convo, "security_tokens": tokens}
+    convo += "**Security Analyst:**\n" + security_report + "\n\n"
+    return {
+        "security_report": security_report,
+        "security_data": security_data,
+        "conversation": convo,
+        "security_tokens": tokens
+    }
 
 
 async def cost_node(state: CarlosState):
-    """Cost optimization specialist reviews the design (uses mini model with streaming)."""
+    """Cost optimization specialist reviews the design with structured JSON output."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
-        f"Please review both designs from a cost optimization perspective."
+        f"Please review both designs from a cost optimization perspective. Respond with JSON only."
     )
     messages = [
         SystemMessage(content=COST_ANALYST_INSTRUCTIONS),
@@ -296,17 +333,41 @@ async def cost_node(state: CarlosState):
             token = chunk.content
             response += token
             tokens.append(token)
+
+    # Parse JSON and format as markdown
+    cost_data = None
+    cost_report = response
+    try:
+        # Extract JSON from response (handle markdown code blocks)
+        json_str = response
+        if "```json" in response:
+            json_str = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            json_str = response.split("```")[1].split("```")[0].strip()
+
+        cost_data = json.loads(json_str)
+        cost_analysis = CostAnalysis(**cost_data)
+        cost_report = format_cost_analysis(cost_analysis)
+    except Exception as e:
+        print(f"⚠️  Failed to parse structured cost output: {e}")
+        # Keep original response as fallback
+
     convo = state.get("conversation", "")
-    convo += "**Cost Specialist:**\n" + response + "\n\n"
-    return {"cost_report": response, "conversation": convo, "cost_tokens": tokens}
+    convo += "**Cost Specialist:**\n" + cost_report + "\n\n"
+    return {
+        "cost_report": cost_report,
+        "cost_data": cost_data,
+        "conversation": convo,
+        "cost_tokens": tokens
+    }
 
 
 async def reliability_node(state: CarlosState):
-    """SRE reviews the design (uses mini model with streaming)."""
+    """SRE reviews the design with structured JSON output."""
     user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
-        f"Please review both designs from a reliability and operations perspective."
+        f"Please review both designs from a reliability and operations perspective. Respond with JSON only."
     )
     messages = [
         SystemMessage(content=RELIABILITY_ENGINEER_INSTRUCTIONS),
@@ -320,9 +381,33 @@ async def reliability_node(state: CarlosState):
             token = chunk.content
             response += token
             tokens.append(token)
+
+    # Parse JSON and format as markdown
+    reliability_data = None
+    reliability_report = response
+    try:
+        # Extract JSON from response (handle markdown code blocks)
+        json_str = response
+        if "```json" in response:
+            json_str = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            json_str = response.split("```")[1].split("```")[0].strip()
+
+        reliability_data = json.loads(json_str)
+        reliability_metrics = ReliabilityMetrics(**reliability_data)
+        reliability_report = format_reliability_analysis(reliability_metrics)
+    except Exception as e:
+        print(f"⚠️  Failed to parse structured reliability output: {e}")
+        # Keep original response as fallback
+
     convo = state.get("conversation", "")
-    convo += "**SRE:**\n" + response + "\n\n"
-    return {"reliability_report": response, "conversation": convo, "reliability_tokens": tokens}
+    convo += "**SRE:**\n" + reliability_report + "\n\n"
+    return {
+        "reliability_report": reliability_report,
+        "reliability_data": reliability_data,
+        "conversation": convo,
+        "reliability_tokens": tokens
+    }
 
 async def auditor_node(state: CarlosState):
     """Final auditor aggregates all specialist feedback (uses streaming)."""
