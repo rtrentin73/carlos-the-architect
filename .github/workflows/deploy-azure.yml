@@ -133,14 +133,14 @@ jobs:
 
       - name: Wait for backend deployment
         run: |
-          kubectl rollout status deployment/carlos-backend --timeout=300s
+          kubectl rollout status deployment/carlos-backend -n carlos --timeout=300s
 
       - name: Get backend URL
         id: backend-url
         run: |
           echo "Waiting for LoadBalancer IP..."
           for i in {1..30}; do
-            IP=$(kubectl get svc carlos-backend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            IP=$(kubectl get svc carlos-backend -n carlos -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             if [ -n "$IP" ]; then
               echo "url=http://$IP" >> $GITHUB_OUTPUT
               echo "Backend URL: http://$IP"
@@ -193,13 +193,13 @@ jobs:
 
       - name: Wait for frontend deployment
         run: |
-          kubectl rollout status deployment/carlos-frontend --timeout=300s
+          kubectl rollout status deployment/carlos-frontend -n carlos --timeout=300s
 
       - name: Get frontend URL
         run: |
           echo "Waiting for LoadBalancer IP..."
           for i in {1..30}; do
-            IP=$(kubectl get svc carlos-frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+            IP=$(kubectl get svc carlos-frontend -n carlos -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
             if [ -n "$IP" ]; then
               echo "Frontend URL: http://$IP"
               break
