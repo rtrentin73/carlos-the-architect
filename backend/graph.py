@@ -34,11 +34,22 @@ class CarlosState(TypedDict):
     terraform_code: str  # Generated Terraform infrastructure code
 
 
-def create_llm(temperature: float = 0.7):
-    """Create LLM client - supports both Azure OpenAI and Azure AI Foundry."""
+def create_llm(temperature: float = 0.7, use_mini: bool = False):
+    """
+    Create LLM client - supports both Azure OpenAI and Azure AI Foundry.
+
+    Args:
+        temperature: Sampling temperature (0.0-1.0)
+        use_mini: If True, use GPT-4o-mini for cost optimization on simple tasks
+    """
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
     api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
+
+    # Choose model based on task complexity
+    if use_mini:
+        model = os.getenv("AZURE_OPENAI_MINI_DEPLOYMENT_NAME", "gpt-4o-mini")
+    else:
+        model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
 
     if not endpoint or not api_key:
         raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set")
@@ -72,31 +83,40 @@ def create_llm(temperature: float = 0.7):
 # Lazy LLM initialization - created on first use
 _llm = None
 _ronei_llm = None
+_mini_llm = None
 
 
 def get_llm():
-    """Get or create the main LLM instance."""
+    """Get or create the main LLM instance (GPT-4o for complex tasks)."""
     global _llm
     if _llm is None:
-        _llm = create_llm(temperature=0.7)
+        _llm = create_llm(temperature=0.7, use_mini=False)
     return _llm
 
 
 def get_ronei_llm():
-    """Get or create Ronei's LLM instance (more creative)."""
+    """Get or create Ronei's LLM instance (GPT-4o, more creative)."""
     global _ronei_llm
     if _ronei_llm is None:
-        _ronei_llm = create_llm(temperature=0.9)
+        _ronei_llm = create_llm(temperature=0.9, use_mini=False)
     return _ronei_llm
 
 
+def get_mini_llm():
+    """Get or create mini LLM instance (GPT-4o-mini for simple analysis tasks)."""
+    global _mini_llm
+    if _mini_llm is None:
+        _mini_llm = create_llm(temperature=0.7, use_mini=True)
+    return _mini_llm
+
+
 async def requirements_gathering_node(state: CarlosState):
-    """Ask clarifying questions about requirements before designing."""
+    """Ask clarifying questions about requirements before designing (uses mini model)."""
     prompt = (
         f"{REQUIREMENTS_GATHERING_INSTRUCTIONS}\n\n"
         f"Initial User Requirements:\n{state['requirements']}"
     )
-    response = await get_llm().ainvoke(prompt)
+    response = await get_mini_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**Requirements Team:**\n" + response.content + "\n\n"
 
@@ -109,7 +129,7 @@ async def requirements_gathering_node(state: CarlosState):
 
 
 async def refine_requirements_node(state: CarlosState):
-    """Refine requirements based on user's answers to clarifying questions."""
+    """Refine requirements based on user's answers (uses mini model for text synthesis)."""
     user_answers = state.get('user_answers', '')
 
     if not user_answers:
@@ -129,7 +149,7 @@ User's Answers to Clarifying Questions:
 Create a single, well-structured requirements document that includes all relevant details from both.
 Use markdown format with clear sections. Be specific and concrete."""
 
-    response = await get_llm().ainvoke(refine_prompt)
+    response = await get_mini_llm().ainvoke(refine_prompt)
     convo = state.get("conversation", "")
     convo += "**Refined Requirements:**\n" + response.content + "\n\n"
 
@@ -261,42 +281,42 @@ async def ronei_design_node(state: CarlosState):
 
 
 async def security_node(state: CarlosState):
-    """Security analyst reviews the design."""
+    """Security analyst reviews the design (uses mini model for cost optimization)."""
     prompt = (
         f"{SECURITY_ANALYST_INSTRUCTIONS}\n\n"
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a security perspective."
     )
-    response = await get_llm().ainvoke(prompt)
+    response = await get_mini_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**Security Analyst:**\n" + response.content + "\n\n"
     return {"security_report": response.content, "conversation": convo}
 
 
 async def cost_node(state: CarlosState):
-    """Cost optimization specialist reviews the design."""
+    """Cost optimization specialist reviews the design (uses mini model for cost optimization)."""
     prompt = (
         f"{COST_ANALYST_INSTRUCTIONS}\n\n"
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a cost optimization perspective."
     )
-    response = await get_llm().ainvoke(prompt)
+    response = await get_mini_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**Cost Specialist:**\n" + response.content + "\n\n"
     return {"cost_report": response.content, "conversation": convo}
 
 
 async def reliability_node(state: CarlosState):
-    """SRE reviews the design."""
+    """SRE reviews the design (uses mini model for cost optimization)."""
     prompt = (
         f"{RELIABILITY_ENGINEER_INSTRUCTIONS}\n\n"
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a reliability and operations perspective."
     )
-    response = await get_llm().ainvoke(prompt)
+    response = await get_mini_llm().ainvoke(prompt)
     convo = state.get("conversation", "")
     convo += "**SRE:**\n" + response.content + "\n\n"
     return {"reliability_report": response.content, "conversation": convo}

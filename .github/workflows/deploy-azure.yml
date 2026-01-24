@@ -24,6 +24,7 @@ env:
   TF_VAR_azure_openai_endpoint: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
   TF_VAR_azure_openai_api_key: ${{ secrets.AZURE_OPENAI_API_KEY }}
   TF_VAR_azure_openai_deployment_name: ${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o' }}
+  TF_VAR_azure_openai_mini_deployment_name: ${{ vars.AZURE_OPENAI_MINI_DEPLOYMENT_NAME || 'gpt-4o-mini' }}
   TF_VAR_azure_openai_api_version: ${{ vars.AZURE_OPENAI_API_VERSION || '2024-08-01-preview' }}
 
 jobs:
@@ -119,6 +120,7 @@ jobs:
           export ACR_LOGIN_SERVER="${{ needs.terraform.outputs.acr_login_server }}"
           export IMAGE_TAG="${{ github.sha }}"
           export AZURE_OPENAI_DEPLOYMENT_NAME="${{ vars.AZURE_OPENAI_DEPLOYMENT_NAME || 'gpt-4o' }}"
+          export AZURE_OPENAI_MINI_DEPLOYMENT_NAME="${{ vars.AZURE_OPENAI_MINI_DEPLOYMENT_NAME || 'gpt-4o-mini' }}"
           export AZURE_OPENAI_API_VERSION="${{ vars.AZURE_OPENAI_API_VERSION || '2024-08-01-preview' }}"
           export FRONTEND_URL="*"
 
