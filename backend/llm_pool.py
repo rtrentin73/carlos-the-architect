@@ -53,7 +53,7 @@ def create_llm(temperature: float = 0.7, use_mini: bool = False):
 
     # Choose model based on task complexity
     if use_mini:
-        model = os.getenv("AZURE_OPENAI_MINI_DEPLOYMENT_NAME") or get_github_variable("AZURE_OPENAI_MINI_DEPLOYMENT_NAME") or "gpt-4o-mini-2024-11-20"
+        model = os.getenv("AZURE_OPENAI_MINI_DEPLOYMENT_NAME") or get_github_variable("AZURE_OPENAI_MINI_DEPLOYMENT_NAME") or "gpt-4o-mini-2024-07-18"
     else:
         model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or get_github_variable("AZURE_OPENAI_DEPLOYMENT_NAME") or "gpt-4o-2024-11-20"
 
