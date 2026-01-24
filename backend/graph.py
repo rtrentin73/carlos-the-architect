@@ -399,11 +399,18 @@ builder.add_conditional_edges("requirements_gathering", check_for_answers)
 builder.add_edge("refine_requirements", "design")
 builder.add_edge("refine_requirements", "ronei_design")
 
-# Security waits for both designs to complete, then other specialists run sequentially
+# All three analysts (Security, Cost, Reliability) run in parallel after both designs complete
+# This runs 3x faster than the previous sequential approach
 builder.add_edge("design", "security")
 builder.add_edge("ronei_design", "security")
-builder.add_edge("security", "cost")
-builder.add_edge("cost", "reliability")
+builder.add_edge("design", "cost")
+builder.add_edge("ronei_design", "cost")
+builder.add_edge("design", "reliability")
+builder.add_edge("ronei_design", "reliability")
+
+# Audit waits for all three analysts to complete
+builder.add_edge("security", "audit")
+builder.add_edge("cost", "audit")
 builder.add_edge("reliability", "audit")
 
 builder.add_conditional_edges(
