@@ -397,6 +397,17 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                             }
                             yield f"data: {json.dumps(token_event)}\n\n"
 
+                    # For Terraform Coder: emit token events
+                    if "terraform_tokens" in node_output and node_output["terraform_tokens"]:
+                        for token in node_output["terraform_tokens"]:
+                            token_event = {
+                                "type": "token",
+                                "agent": "terraform_coder",
+                                "content": token,
+                                "timestamp": datetime.now(timezone.utc).isoformat()
+                            }
+                            yield f"data: {json.dumps(token_event)}\n\n"
+
                     # For other agents: emit field_update events
                     field_mappings = {
                         "security": "security_report",
