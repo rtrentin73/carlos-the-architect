@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import { useAuth } from './contexts/AuthContext';
@@ -18,6 +18,12 @@ export default function App() {
   const [strictnessLevel, setStrictnessLevel] = useState("balanced");
  
   const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+
+  // File upload state
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+
   const [design, setDesign] = useState("");
   const [roneiDesign, setRoneiDesign] = useState("");
   const [isDesigning, setIsDesigning] = useState(false);
@@ -231,6 +237,117 @@ export default function App() {
         setIsDesigning(false);
         break;
     }
+  };
+
+  // File upload handlers
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (50MB)
+    const maxSize = 50 * 1024 * 1024;
+    if (file.size > maxSize) {
+      console.error('File too large. Maximum size is 50MB');
+      return;
+    }
+
+    setUploading(true);
+    console.log(`📤 Uploading ${file.name}...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Start async document processing
+      const response = await fetch(`${backendBaseUrl}/upload-document`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Upload failed');
+      }
+
+      const data = await response.json();
+      const taskId = data.task_id;
+
+      console.log(`⏳ Processing ${file.name}...`);
+
+      // Poll for completion
+      const pollInterval = 2000;
+      const maxAttempts = 60;
+      let attempts = 0;
+
+      const checkStatus = async () => {
+        try {
+          const statusResponse = await fetch(`${backendBaseUrl}/documents/${taskId}`, {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (!statusResponse.ok) {
+            throw new Error('Failed to check document status');
+          }
+
+          const statusData = await statusResponse.json();
+
+          if (statusData.status === 'completed') {
+            // Merge extracted text with existing input
+            const mergedText = input.trim()
+              ? `${input.trim()}\n\n${statusData.extracted_text}`
+              : statusData.extracted_text;
+
+            setInput(mergedText);
+            setUploadedFile({ name: file.name, message: `✅ ${file.name} processed` });
+
+            console.log(`✅ ${file.name} processed successfully`);
+            setUploading(false);
+
+            setTimeout(() => setUploadedFile(null), 5000);
+
+          } else if (statusData.status === 'failed') {
+            console.error(`❌ Failed to process ${file.name}: ${statusData.error}`);
+            setUploading(false);
+
+          } else {
+            attempts++;
+            if (attempts < maxAttempts) {
+              setTimeout(checkStatus, pollInterval);
+            } else {
+              console.error(`❌ Document processing timeout`);
+              setUploading(false);
+            }
+          }
+
+        } catch (error) {
+          console.error(`❌ Status check failed: ${error.message}`);
+          setUploading(false);
+        }
+      };
+
+      checkStatus();
+
+    } catch (error) {
+      console.error(`❌ Upload failed: ${error.message}`);
+      setUploading(false);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleFileButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const removeUploadedFile = () => {
+    setUploadedFile(null);
   };
 
   const handleAskCarlos = async () => {
@@ -944,24 +1061,65 @@ export default function App() {
         {/* Input Bar */}
         {currentView === "blueprint" && (
         <div className="p-6 bg-white border-t border-slate-200">
-          <div className="max-w-3xl mx-auto relative">
-            <input 
-              className="w-full p-4 pr-16 border rounded-xl shadow-inner focus:ring-2 focus:ring-blue-500 outline-none"
-              placeholder="Tell Carlos what you need to build..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAskCarlos()}
-            />
-            <button 
-              onClick={() => {
-                console.log("Button clicked!");
-                handleAskCarlos();
-              }}
-              disabled={isDesigning}
-              className="absolute right-2 top-2 p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300"
-            >
-              {isDesigning ? <Loader2 className="animate-spin"/> : <Send size={20}/>}
-            </button>
+          <div className="max-w-3xl mx-auto">
+            {/* File upload confirmation */}
+            {uploadedFile && (
+              <div className="mb-3 flex items-center gap-2 text-green-600 bg-green-50 px-3 py-2 rounded-lg">
+                <span className="text-sm font-medium">{uploadedFile.message}</span>
+                <button
+                  className="ml-auto hover:text-green-800"
+                  onClick={removeUploadedFile}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+            <div className="flex gap-3">
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+
+              {/* Paperclip button */}
+              <button
+                onClick={handleFileButtonClick}
+                disabled={isDesigning || uploading}
+                className="p-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-slate-200"
+                title="Upload requirements document (PDF, DOCX, TXT, MD, XLSX - max 50MB)"
+              >
+                {uploading ? (
+                  <Loader2 className="animate-spin" size={20} />
+                ) : (
+                  <Paperclip size={20} />
+                )}
+              </button>
+
+              {/* Text input */}
+              <input
+                className="flex-1 p-4 border rounded-xl shadow-inner focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="Tell Carlos what you need to build..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAskCarlos()}
+                disabled={isDesigning}
+              />
+
+              {/* Send button */}
+              <button
+                onClick={() => {
+                  console.log("Button clicked!");
+                  handleAskCarlos();
+                }}
+                disabled={isDesigning || !input.trim()}
+                className="p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all"
+              >
+                {isDesigning ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
+              </button>
+            </div>
           </div>
         </div>
         )}
