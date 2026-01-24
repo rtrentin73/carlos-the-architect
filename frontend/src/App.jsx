@@ -56,7 +56,14 @@ export default function App() {
   const [tokenCounts, setTokenCounts] = useState({
     carlos: 0,
     ronei_design: 0,
-    terraform_coder: 0
+    terraform_coder: 0,
+    requirements_gathering: 0,
+    refine_requirements: 0,
+    security: 0,
+    cost: 0,
+    reliability: 0,
+    audit: 0,
+    recommender: 0
   });
 
   useEffect(() => {
@@ -103,59 +110,38 @@ export default function App() {
         break;
 
       case "token":
-        if (event.agent === "carlos") {
-          setDesign(prev => prev + event.content);
-          setTokenCounts(prev => ({ ...prev, carlos: prev.carlos + 1 }));
+        // Map agents to their state setters and display names
+        const agentStreamConfig = {
+          carlos: { setter: setDesign, name: 'Carlos' },
+          ronei_design: { setter: setRoneiDesign, name: 'Ronei' },
+          terraform_coder: { setter: setTerraformCode, name: 'Terraform Coder' },
+          requirements_gathering: { setter: setAgentChat, name: 'Requirements Team' },
+          refine_requirements: { setter: setAgentChat, name: 'Requirements Refiner' },
+          security: { setter: setSecurityReport, name: 'Security Analyst' },
+          cost: { setter: setCostReport, name: 'Cost Specialist' },
+          reliability: { setter: setReliabilityReport, name: 'SRE' },
+          audit: { setter: setAuditReport, name: 'Chief Auditor' },
+          recommender: { setter: setRecommendation, name: 'Design Recommender' }
+        };
 
-          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
+        const config = agentStreamConfig[event.agent];
+        if (config) {
+          // Update content
+          config.setter(prev => prev + event.content);
+
+          // Update token count and add activity log entry every 50 tokens
           setTokenCounts(prev => {
-            const newCount = prev.carlos + 1;
+            const newCount = (prev[event.agent] || 0) + 1;
             if (newCount % 50 === 0) {
               setActivityLog(activityPrev => [...activityPrev, {
                 id: Date.now() + Math.random(),
                 type: 'streaming',
-                agent: 'carlos',
-                message: `Carlos streaming design... (${newCount} tokens)`,
+                agent: event.agent,
+                message: `${config.name} streaming... (${newCount} tokens)`,
                 timestamp: event.timestamp || new Date().toISOString()
               }]);
             }
-            return { ...prev, carlos: newCount };
-          });
-        } else if (event.agent === "ronei_design") {
-          setRoneiDesign(prev => prev + event.content);
-          setTokenCounts(prev => ({ ...prev, ronei_design: prev.ronei_design + 1 }));
-
-          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
-          setTokenCounts(prev => {
-            const newCount = prev.ronei_design + 1;
-            if (newCount % 50 === 0) {
-              setActivityLog(activityPrev => [...activityPrev, {
-                id: Date.now() + Math.random(),
-                type: 'streaming',
-                agent: 'ronei_design',
-                message: `Ronei streaming design... (${newCount} tokens)`,
-                timestamp: event.timestamp || new Date().toISOString()
-              }]);
-            }
-            return { ...prev, ronei_design: newCount };
-          });
-        } else if (event.agent === "terraform_coder") {
-          setTerraformCode(prev => prev + event.content);
-          setTokenCounts(prev => ({ ...prev, terraform_coder: prev.terraform_coder + 1 }));
-
-          // Add streaming indicator to activity log (update every 50 tokens to avoid spam)
-          setTokenCounts(prev => {
-            const newCount = prev.terraform_coder + 1;
-            if (newCount % 50 === 0) {
-              setActivityLog(activityPrev => [...activityPrev, {
-                id: Date.now() + Math.random(),
-                type: 'streaming',
-                agent: 'terraform_coder',
-                message: `Terraform Coder streaming... (${newCount} tokens)`,
-                timestamp: event.timestamp || new Date().toISOString()
-              }]);
-            }
-            return { ...prev, terraform_coder: newCount };
+            return { ...prev, [event.agent]: newCount };
           });
         }
         break;

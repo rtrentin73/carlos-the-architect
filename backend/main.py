@@ -375,47 +375,42 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                     }
                     yield f"data: {json.dumps(start_event)}\n\n"
 
-                    # For Carlos: emit token events
-                    if "design_tokens" in node_output and node_output["design_tokens"]:
-                        for token in node_output["design_tokens"]:
-                            token_event = {
-                                "type": "token",
-                                "agent": "carlos",
-                                "content": token,
-                                "timestamp": datetime.now(timezone.utc).isoformat()
-                            }
-                            yield f"data: {json.dumps(token_event)}\n\n"
+                    # Token streaming mappings: token_field -> agent_name
+                    token_mappings = {
+                        "design_tokens": "carlos",
+                        "ronei_tokens": "ronei_design",
+                        "terraform_tokens": "terraform_coder",
+                        "requirements_tokens": "requirements_gathering",
+                        "refine_tokens": "refine_requirements",
+                        "security_tokens": "security",
+                        "cost_tokens": "cost",
+                        "reliability_tokens": "reliability",
+                        "audit_tokens": "audit",
+                        "recommender_tokens": "recommender",
+                    }
 
-                    # For Ronei: emit token events
-                    if "ronei_tokens" in node_output and node_output["ronei_tokens"]:
-                        for token in node_output["ronei_tokens"]:
-                            token_event = {
-                                "type": "token",
-                                "agent": "ronei_design",
-                                "content": token,
-                                "timestamp": datetime.now(timezone.utc).isoformat()
-                            }
-                            yield f"data: {json.dumps(token_event)}\n\n"
+                    # Emit token events for all streaming agents
+                    for token_field, agent_name in token_mappings.items():
+                        if token_field in node_output and node_output[token_field]:
+                            for token in node_output[token_field]:
+                                token_event = {
+                                    "type": "token",
+                                    "agent": agent_name,
+                                    "content": token,
+                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                }
+                                yield f"data: {json.dumps(token_event)}\n\n"
 
-                    # For Terraform Coder: emit token events
-                    if "terraform_tokens" in node_output and node_output["terraform_tokens"]:
-                        for token in node_output["terraform_tokens"]:
-                            token_event = {
-                                "type": "token",
-                                "agent": "terraform_coder",
-                                "content": token,
-                                "timestamp": datetime.now(timezone.utc).isoformat()
-                            }
-                            yield f"data: {json.dumps(token_event)}\n\n"
-
-                    # For other agents: emit field_update events
+                    # Field update mappings for final content
                     field_mappings = {
                         "security": "security_report",
                         "cost": "cost_report",
                         "reliability": "reliability_report",
                         "audit": "audit_report",
                         "recommender": "recommendation",
-                        "terraform_coder": "terraform_code"
+                        "terraform_coder": "terraform_code",
+                        "requirements_gathering": "refined_requirements",
+                        "refine_requirements": "refined_requirements",
                     }
 
                     if node_name in field_mappings:
