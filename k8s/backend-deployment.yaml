@@ -51,6 +51,10 @@ spec:
                   key: redis-host
             - name: REDIS_PORT
               value: "6380"
+              valueFrom:
+                secretKeyRef:
+                  name: carlos-secrets
+                  key: redis-port
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:

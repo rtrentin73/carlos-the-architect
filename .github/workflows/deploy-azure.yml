@@ -39,6 +39,8 @@ jobs:
       redis_key: ${{ steps.tf-outputs.outputs.redis_key }}
       cosmosdb_endpoint: ${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}
       cosmosdb_key: ${{ steps.tf-outputs.outputs.cosmosdb_key }}
+      redis_port: ${{ steps.tf-outputs.outputs.redis_port }}
+      redis_password: ${{ steps.tf-outputs.outputs.redis_password }}
 
     steps:
       - name: Checkout code
@@ -73,6 +75,9 @@ jobs:
           echo "redis_key=$(terraform output -raw redis_primary_access_key)" >> $GITHUB_OUTPUT
           echo "cosmosdb_endpoint=$(terraform output -raw cosmosdb_endpoint)" >> $GITHUB_OUTPUT
           echo "cosmosdb_key=$(terraform output -raw cosmosdb_primary_key)" >> $GITHUB_OUTPUT
+          echo "redis_port=$(terraform output -raw redis_port)" >> $GITHUB_OUTPUT
+          echo "::add-mask::$(terraform output -raw redis_primary_access_key)"
+          echo "redis_password=$(terraform output -raw redis_primary_access_key)" >> $GITHUB_OUTPUT
 
   deploy-backend:
     name: Deploy Backend to AKS
@@ -121,7 +126,7 @@ jobs:
             --docker-password=$ACR_PASSWORD \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          # Create app secrets (OpenAI, Redis, Cosmos DB)
+          # Create app secrets (including Redis credentials from Terraform outputs)
           kubectl create secret generic carlos-secrets \
             --namespace=carlos \
             --from-literal=azure-openai-endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
@@ -130,6 +135,8 @@ jobs:
             --from-literal=redis-password=${{ needs.terraform.outputs.redis_key }} \
             --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \
             --from-literal=cosmosdb-key=${{ needs.terraform.outputs.cosmosdb_key }} \
+            --from-literal=redis-port=${{ needs.terraform.outputs.redis_port }} \
+            --from-literal=redis-password=${{ needs.terraform.outputs.redis_password }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend to AKS
