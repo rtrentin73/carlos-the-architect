@@ -1,6 +1,7 @@
 from typing import TypedDict, Annotated, Optional
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage
+from historical_learning import get_historical_context
 from tasks import (
     REQUIREMENTS_GATHERING_INSTRUCTIONS,
     CARLOS_INSTRUCTIONS,
@@ -57,6 +58,8 @@ class CarlosState(TypedDict):
     cost_data: Optional[dict]  # Structured cost analysis data
     security_data: Optional[dict]  # Structured security analysis data
     reliability_data: Optional[dict]  # Structured reliability metrics data
+    # Historical learning context from past feedback
+    historical_context: str  # Learning context from past deployments
 
 
 # Connection pool is now managed in llm_pool.py
@@ -133,12 +136,48 @@ User's Answers to Clarifying Questions:
     }
 
 
+async def historical_learning_node(state: CarlosState):
+    """Fetch historical context from past deployment feedback before design generation.
+
+    This node queries the feedback store for similar past designs and extracts
+    patterns that worked well (high ratings) and patterns to avoid (issues).
+    The context is injected into design prompts to help Carlos and Ronei learn
+    from real deployment outcomes.
+    """
+    requirements = state.get('refined_requirements') or state['requirements']
+    priorities = state.get("priorities", {}) or {}
+
+    # Get cloud provider hint from priorities if available
+    cloud_provider = priorities.get("cloud_provider")
+
+    try:
+        historical_context = await get_historical_context(
+            requirements=requirements,
+            cloud_provider=cloud_provider
+        )
+        if historical_context:
+            print(f"  Historical context loaded: {len(historical_context)} chars")
+        else:
+            print("  No relevant historical context found")
+    except Exception as e:
+        print(f"  Historical learning error (continuing without): {e}")
+        historical_context = ""
+
+    return {"historical_context": historical_context}
+
+
 async def carlos_design_node(state: CarlosState):
     """Carlos drafts the infrastructure"""
     scenario = state.get("scenario")
     priorities = state.get("priorities", {}) or {}
+    historical_context = state.get("historical_context", "")
 
     context_lines = []
+
+    # Add historical learning context first (high priority)
+    if historical_context:
+        context_lines.append(historical_context)
+
     if scenario and scenario != "custom":
         context_lines.append(f"Scenario preset: {scenario} (interpret and adapt as needed).")
 
@@ -208,8 +247,14 @@ async def ronei_design_node(state: CarlosState):
     """Ronei drafts a competing infrastructure design"""
     scenario = state.get("scenario")
     priorities = state.get("priorities", {}) or {}
+    historical_context = state.get("historical_context", "")
 
     context_lines = []
+
+    # Add historical learning context (Ronei will interpret it with his flair)
+    if historical_context:
+        context_lines.append(historical_context)
+
     if scenario and scenario != "custom":
         context_lines.append(f"Scenario preset: {scenario} (I'll show Carlos how it's really done).")
 
@@ -550,6 +595,7 @@ async def terraform_validator_node(state: CarlosState):
 builder = StateGraph(CarlosState)
 builder.add_node("requirements_gathering", requirements_gathering_node)
 builder.add_node("refine_requirements", refine_requirements_node)
+builder.add_node("historical_learning", historical_learning_node)
 builder.add_node("design", carlos_design_node)
 builder.add_node("ronei_design", ronei_design_node)
 builder.add_node("security", security_node)
@@ -576,9 +622,10 @@ def check_for_answers(state):
 
 builder.add_conditional_edges("requirements_gathering", check_for_answers)
 
-# After refining requirements, run Carlos and Ronei in parallel
-builder.add_edge("refine_requirements", "design")
-builder.add_edge("refine_requirements", "ronei_design")
+# After refining requirements, fetch historical context then run Carlos and Ronei in parallel
+builder.add_edge("refine_requirements", "historical_learning")
+builder.add_edge("historical_learning", "design")
+builder.add_edge("historical_learning", "ronei_design")
 
 # All three analysts (Security, Cost, Reliability) run in parallel after both designs complete
 # This runs 3x faster than the previous sequential approach
