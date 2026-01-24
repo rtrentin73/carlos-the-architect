@@ -67,7 +67,10 @@ def create_llm(temperature: float = 0.7, use_mini: bool = False):
     # Azure AI Foundry endpoints contain 'services.ai.azure.com'
     if "services.ai.azure.com" in endpoint or "models.inference.ai.azure.com" in endpoint:
         # Azure AI Foundry / GitHub Models - use AzureChatOpenAI
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION") or get_github_variable("AZURE_OPENAI_API_VERSION") or "2024-08-01-preview"
+        if "models.inference.ai.azure.com" in endpoint:
+            api_version = "2024-05-01-preview"  # GitHub Models specific
+        else:
+            api_version = os.getenv("AZURE_OPENAI_API_VERSION") or get_github_variable("AZURE_OPENAI_API_VERSION") or "2024-08-01-preview"
 
         return AzureChatOpenAI(
             azure_deployment=model,
