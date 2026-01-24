@@ -11,10 +11,10 @@ These improvements can be implemented incrementally alongside the strategic road
 | Priority | Improvement | Impact | Effort | Timeline |
 |----------|-------------|--------|--------|----------|
 | **P0** | Rate Limiting Protection | High | Low | 1-2 days |
-| **P0** | Connection Pooling | High | Low | 2-3 days |
+
 | **P1** | Structured Outputs | High | Medium | 1 week |
 | **P1** | Validation Agent | High | Low | 3-5 days |
-| **P1** | Async Document Processing | Medium | Low | 2-3 days |
+
 | **P2** | Streaming Terraform Code | Medium | Medium | 1 week |
 | **P2** | Cache Common Patterns | Medium | Medium | 1 week |
 | **P3** | Feedback Loop | High | High | 2-3 weeks |
