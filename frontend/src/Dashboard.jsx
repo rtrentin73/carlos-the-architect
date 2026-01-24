@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Cloud, ShieldCheck, PenTool, Loader2, Terminal } from 'lucide-react';
+import { Cloud, ShieldCheck, PenTool, Loader2, Terminal, Paperclip, X } from 'lucide-react';
 import carlosImg from './assets/splash.jpg';
 
 export default function Dashboard() {
@@ -16,6 +16,11 @@ export default function Dashboard() {
   const [clarificationQuestions, setClarificationQuestions] = useState("");
   const [userAnswers, setUserAnswers] = useState("");
   const [originalRequirements, setOriginalRequirements] = useState("");
+
+  // File upload state
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8001";
 
@@ -163,6 +168,71 @@ export default function Dashboard() {
     setUserAnswers(""); // Clear answers after submission
   };
 
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (10MB)
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      addLog('ERROR', '❌ File too large. Maximum size is 10MB');
+      return;
+    }
+
+    setUploading(true);
+    addLog('INFO', `📤 Uploading ${file.name}...`);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${backendBaseUrl}/upload-document`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Upload failed');
+      }
+
+      const data = await response.json();
+
+      // Merge extracted text with existing input
+      const mergedText = input.trim()
+        ? `${input.trim()}\n\n${data.extracted_text}`
+        : data.extracted_text;
+
+      setInput(mergedText);
+      setUploadedFile({ name: file.name, message: data.message });
+
+      addLog('SUCCESS', data.message);
+
+      // Clear the file after a few seconds
+      setTimeout(() => setUploadedFile(null), 5000);
+
+    } catch (error) {
+      addLog('ERROR', `❌ Upload failed: ${error.message}`);
+    } finally {
+      setUploading(false);
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleFileButtonClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const removeUploadedFile = () => {
+    setUploadedFile(null);
+  };
+
   if (loading) return <SplashScreen />;
 
   return (
@@ -286,22 +356,63 @@ export default function Dashboard() {
         {/* Requirements Input Area */}
         {!clarificationNeeded && (
           <footer className="p-8 bg-white border-t border-slate-200 shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.05)]">
-            <div className="max-w-4xl mx-auto flex gap-4">
-              <input
-                className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
-                placeholder="Tell Carlos your cloud requirements (e.g. 'Highly available AKS cluster on Azure')..."
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && !clarificationNeeded && runCarlos()}
-                disabled={status === 'designing'}
-              />
-              <button
-                onClick={() => runCarlos()}
-                disabled={!input.trim() || status === 'designing'}
-                className="bg-blue-600 text-white px-10 py-4 rounded-xl font-bold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-blue-500/20"
-              >
-                {status === 'designing' ? 'Designing...' : 'Ask Carlos'}
-              </button>
+            <div className="max-w-4xl mx-auto">
+              {/* File upload confirmation */}
+              {uploadedFile && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-blue-700">
+                    <Paperclip size={16} />
+                    <span className="text-sm font-medium">{uploadedFile.message}</span>
+                  </div>
+                  <button
+                    onClick={removeUploadedFile}
+                    className="text-blue-500 hover:text-blue-700 transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
+              <div className="flex gap-4">
+                {/* Hidden file input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xls"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+
+                {/* Paperclip button */}
+                <button
+                  onClick={handleFileButtonClick}
+                  disabled={status === 'designing' || uploading}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-4 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-slate-200"
+                  title="Upload requirements document (PDF, DOCX, TXT, MD, XLSX - max 10MB)"
+                >
+                  {uploading ? (
+                    <Loader2 className="animate-spin" size={20} />
+                  ) : (
+                    <Paperclip size={20} />
+                  )}
+                </button>
+
+                <input
+                  className="flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
+                  placeholder="Tell Carlos your cloud requirements (e.g. 'Highly available AKS cluster on Azure')..."
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !clarificationNeeded && runCarlos()}
+                  disabled={status === 'designing'}
+                />
+                <button
+                  onClick={() => runCarlos()}
+                  disabled={!input.trim() || status === 'designing'}
+                  className="bg-blue-600 text-white px-10 py-4 rounded-xl font-bold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-30 shadow-lg shadow-blue-500/20"
+                >
+                  {status === 'designing' ? 'Designing...' : 'Ask Carlos'}
+                </button>
+              </div>
             </div>
           </footer>
         )}
