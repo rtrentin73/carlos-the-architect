@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import { useAuth } from './contexts/AuthContext';
@@ -36,6 +36,7 @@ export default function App() {
   const [terraformCode, setTerraformCode] = useState("");
   const [terraformValidation, setTerraformValidation] = useState("");
   const [copied, setCopied] = useState(false);
+  const [isCacheHit, setIsCacheHit] = useState(false);
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
 
@@ -94,8 +95,20 @@ export default function App() {
     };
 
     switch (event.type) {
+      case "cache_hit":
+        console.log(`📦 Cache HIT - Using cached design pattern`);
+        setIsCacheHit(true);
+        setActivityLog(prev => [...prev, {
+          id: Date.now() + Math.random(),
+          type: 'cache',
+          agent: 'cache',
+          message: '⚡ Using cached design pattern - instant response!',
+          timestamp: event.timestamp || new Date().toISOString()
+        }]);
+        break;
+
       case "agent_start":
-        console.log(`🚀 Agent ${event.agent} started`);
+        console.log(`🚀 Agent ${event.agent} started${event.cached ? ' (cached)' : ''}`);
         setActivityLog(prev => [...prev, {
           id: Date.now() + Math.random(),
           type: 'start',
@@ -415,6 +428,7 @@ export default function App() {
     setAgentChat("");
     setStreamingQuestions("");
     setActivityLog([]);
+    setIsCacheHit(false);
     setAgentStatuses({
       design: 'pending',
       ronei_design: 'pending',
@@ -876,6 +890,19 @@ export default function App() {
                   Live Activity Monitor
                 </h2>
 
+                {/* Cache Hit Indicator */}
+                {isCacheHit && (
+                  <div className="mb-6 p-4 bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg flex items-center gap-3">
+                    <div className="p-2 bg-amber-100 rounded-full">
+                      <Zap size={20} className="text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="font-semibold text-amber-800">⚡ Instant Response - Cache Hit!</p>
+                      <p className="text-sm text-amber-600">This design pattern was cached. Response time: &lt;1 second</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Agent Status Overview */}
                 <div className="mb-8">
                   <h3 className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Agent Status</h3>
@@ -918,6 +945,7 @@ export default function App() {
                         <div
                           key={log.id}
                           className={`flex items-start gap-3 p-3 rounded-lg ${
+                            log.type === 'cache' ? 'bg-amber-50 border-l-4 border-amber-500' :
                             log.type === 'start' ? 'bg-blue-50 border-l-4 border-blue-500' :
                             log.type === 'complete' ? 'bg-green-50 border-l-4 border-green-500' :
                             log.type === 'report' ? 'bg-purple-50 border-l-4 border-purple-500' :
@@ -1502,6 +1530,14 @@ function parseAgentTranscript(text) {
 
 function getAgentVisuals(agent) {
   const name = agent.toLowerCase();
+
+  if (name === "cache") {
+    return {
+      iconBg: "bg-amber-100",
+      labelColor: "text-amber-700",
+      icon: <Zap size={18} />,
+    };
+  }
 
   if (name.startsWith("carlos")) {
     return {

@@ -33,10 +33,10 @@ resource "azurerm_kubernetes_cluster" "main" {
   tags                = local.tags
 
   default_node_pool {
-    name                = "default"
-    node_count          = var.aks_node_count
-    vm_size             = var.aks_vm_size
-    os_disk_size_gb     = 30
+    name                        = "default"
+    node_count                  = var.aks_node_count
+    vm_size                     = var.aks_vm_size
+    os_disk_size_gb             = 30
     temporary_name_for_rotation = "temppool"
 
     enable_auto_scaling = true
@@ -52,5 +52,23 @@ resource "azurerm_kubernetes_cluster" "main" {
     network_plugin = "azure"
     dns_service_ip = "10.0.3.10"
     service_cidr   = "10.0.3.0/24"
+  }
+}
+
+# Azure Cache for Redis
+resource "azurerm_redis_cache" "main" {
+  name                          = "${local.resource_prefix}-redis"
+  location                      = azurerm_resource_group.main.location
+  resource_group_name           = azurerm_resource_group.main.name
+  capacity                      = var.redis_capacity
+  family                        = var.redis_family
+  sku_name                      = var.redis_sku
+  tags                          = local.tags
+  non_ssl_port_enabled          = false
+  minimum_tls_version           = "1.2"
+  public_network_access_enabled = true
+
+  redis_configuration {
+    maxmemory_policy = "allkeys-lru"
   }
 }

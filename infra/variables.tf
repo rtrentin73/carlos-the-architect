@@ -51,3 +51,21 @@ variable "azure_openai_api_version" {
   type        = string
   default     = "2024-08-01-preview"
 }
+
+variable "redis_sku" {
+  description = "Azure Cache for Redis SKU (Basic, Standard, Premium)"
+  type        = string
+  default     = "Basic"
+}
+
+variable "redis_capacity" {
+  description = "Azure Cache for Redis capacity (0-6 for Basic/Standard, 1-5 for Premium)"
+  type        = number
+  default     = 0
+}
+
+variable "redis_family" {
+  description = "Azure Cache for Redis family (C for Basic/Standard, P for Premium)"
+  type        = string
+  default     = "C"
+}

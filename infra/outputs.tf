@@ -30,3 +30,19 @@ output "aks_kube_config" {
   value       = azurerm_kubernetes_cluster.main.kube_config_raw
   sensitive   = true
 }
+
+output "redis_hostname" {
+  description = "Azure Cache for Redis hostname"
+  value       = azurerm_redis_cache.main.hostname
+}
+
+output "redis_port" {
+  description = "Azure Cache for Redis SSL port"
+  value       = azurerm_redis_cache.main.ssl_port
+}
+
+output "redis_primary_access_key" {
+  description = "Azure Cache for Redis primary access key"
+  value       = azurerm_redis_cache.main.primary_access_key
+  sensitive   = true
+}
