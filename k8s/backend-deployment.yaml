@@ -33,6 +33,13 @@ spec:
                 secretKeyRef:
                   name: carlos-secrets
                   key: azure-openai-api-key
+            # Tavily API for reference search
+            - name: TAVILY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: carlos-secrets
+                  key: tavily-api-key
+                  optional: true
             - name: AZURE_OPENAI_DEPLOYMENT_NAME
               value: "${AZURE_OPENAI_DEPLOYMENT_NAME}"
             - name: AZURE_OPENAI_MINI_DEPLOYMENT_NAME
@@ -50,7 +57,6 @@ spec:
                   name: carlos-secrets
                   key: redis-host
             - name: REDIS_PORT
-              value: "6380"
               valueFrom:
                 secretKeyRef:
                   name: carlos-secrets

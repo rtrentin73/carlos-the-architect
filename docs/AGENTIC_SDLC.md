@@ -2,23 +2,22 @@
 
 ## Overview
 
-Carlos the Architect implements a **multi-agent Software Development Lifecycle (SDLC)** for cloud infrastructure design. The system uses 10 specialized AI agents orchestrated through LangGraph to automate the complete journey from requirements gathering to production-ready Terraform code.
+Carlos the Architect implements a **multi-agent Software Development Lifecycle (SDLC)** for cloud infrastructure design. The system uses 11 specialized AI agents orchestrated through LangGraph to automate the complete journey from requirements gathering to production-ready Terraform code, with **historical learning** from past deployment feedback.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        AGENTIC SDLC PIPELINE                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  REQUIREMENTS ──► DESIGN ──► ANALYSIS ──► REVIEW ──► DECISION ──► CODE    │
-│       │              │           │           │           │          │       │
-│  [Gathering]    [Carlos]    [Security]   [Auditor]  [Recommender] [Terraform]│
-│       │         [Ronei]     [Cost]          │           │          │       │
-│       │            ║        [SRE]           │           │          │       │
-│       │            ║           ║            │           │          │       │
-│       ▼            ▼           ▼            ▼           ▼          ▼       │
-│   Questions    2 Designs   3 Reports    Approval   Selection    IaC       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                           AGENTIC SDLC PIPELINE                                    │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  REQUIREMENTS ──► LEARNING ──► DESIGN ──► ANALYSIS ──► REVIEW ──► DECISION ──► CODE │
+│       │              │           │           │           │           │          │ │
+│  [Gathering]   [Historical]  [Carlos]   [Security]  [Auditor]  [Recommender] [TF] │
+│       │         [Learning]   [Ronei]     [Cost]         │           │          │ │
+│       │              │          ║        [SRE]          │           │          │ │
+│       ▼              ▼          ▼           ▼           ▼           ▼          ▼ │
+│   Questions     Context    2 Designs   3 Reports    Approval   Selection    IaC  │
+│              from feedback                                                        │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## SDLC Phases Mapped to Agents
@@ -26,17 +25,18 @@ Carlos the Architect implements a **multi-agent Software Development Lifecycle (
 | SDLC Phase | Agent(s) | Output | Purpose |
 |------------|----------|--------|---------|
 | **1. Requirements** | Requirements Gathering | Clarifying questions | Understand user needs |
-| **2. Design** | Carlos + Ronei (parallel) | 2 architecture designs | Competitive design generation |
-| **3. Analysis** | Security, Cost, SRE (parallel) | 3 specialist reports | Multi-dimensional review |
-| **4. Review** | Chief Auditor | Approval decision | Quality gate |
-| **5. Decision** | Design Recommender | Final recommendation | Select best design |
-| **6. Implementation** | Terraform Coder | Infrastructure-as-Code | Production-ready output |
+| **2. Learning** | Historical Learning | Context from past designs | Learn from deployment feedback |
+| **3. Design** | Carlos + Ronei (parallel) | 2 architecture designs | Competitive design generation |
+| **4. Analysis** | Security, Cost, SRE (parallel) | 3 specialist reports | Multi-dimensional review |
+| **5. Review** | Chief Auditor | Approval decision | Quality gate |
+| **6. Decision** | Design Recommender | Final recommendation | Select best design |
+| **7. Implementation** | Terraform Coder | Infrastructure-as-Code | Production-ready output |
 
 ---
 
 ## Agent Architecture
 
-### The 10 Agents
+### The 11 Agents
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -50,6 +50,14 @@ Carlos the Architect implements a **multi-agent Software Development Lifecycle (
 │  │  AWS-native     │    │   Kubernetes    │                    │
 │  │  temp: 0.7      │    │   temp: 0.9     │                    │
 │  └─────────────────┘    └─────────────────┘                    │
+│           ▲                     ▲                              │
+│           └───────┬─────────────┘                              │
+│                   │                                            │
+│  TIER 0.5: HISTORICAL LEARNING (No LLM - Data Query)          │
+│  ┌─────────────────────────────────────────┐                   │
+│  │         Historical Learning              │                   │
+│  │   (Queries Cosmos DB for past feedback)  │                   │
+│  └─────────────────────────────────────────┘                   │
 │                                                                 │
 │  TIER 2: SPECIALIST ANALYSTS (GPT-4o-mini)                     │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                      │
@@ -83,6 +91,19 @@ Carlos the Architect implements a **multi-agent Software Development Lifecycle (
   - Security & compliance needs
   - Budget constraints
   - Deployment preferences
+
+#### 1.5 Historical Learning Node
+- **Model:** None (data query only)
+- **Role:** Learn from past deployment feedback
+- **Data Source:** Azure Cosmos DB (deployment feedback)
+- **Process:**
+  1. Extract keywords from refined requirements
+  2. Query similar past designs from feedback store
+  3. Categorize feedback by success (4-5 stars) vs problems (1-2 stars)
+  4. Extract patterns that worked well
+  5. Extract warnings from problematic deployments
+- **Output:** Formatted context injected into design prompts
+- **Graceful Degradation:** Returns empty context on failure (5s timeout)
 
 #### 2. Carlos (Lead Cloud Architect)
 - **Model:** GPT-4o (main pool)
@@ -185,12 +206,21 @@ Carlos the Architect implements a **multi-agent Software Development Lifecycle (
              answers)    │  Requirements   │
                          └─────────────────┘
                                   │
+                                  ▼
+                         ┌─────────────────┐
+                         │   HISTORICAL    │
+                         │    LEARNING     │
+                         │ (query feedback)│
+                         └─────────────────┘
+                                  │
                     ┌─────────────┴─────────────┐
                     │                           │
                     ▼                           ▼
            ┌──────────────┐            ┌──────────────┐
            │    CARLOS    │            │    RONEI     │
            │   (design)   │  PARALLEL  │   (design)   │
+           │ +historical  │            │ +historical  │
+           │   context    │            │   context    │
            └──────────────┘            └──────────────┘
                     │                           │
                     └─────────────┬─────────────┘
@@ -260,6 +290,9 @@ class CarlosState(TypedDict):
     # Requirements Phase
     refined_requirements: str            # Merged requirements + answers
     clarification_needed: bool           # Flow control flag
+
+    # Historical Learning Phase
+    historical_context: str              # Patterns from past deployments
 
     # Design Phase
     design_doc: str                      # Carlos' architecture
@@ -449,6 +482,89 @@ The `/design-stream` endpoint provides real-time updates:
 
 ---
 
+## Historical Learning System
+
+### Feedback-Driven Improvement
+
+Carlos learns from past deployment outcomes stored in Azure Cosmos DB:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    HISTORICAL LEARNING FLOW                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  NEW REQUEST                          PAST FEEDBACK (Cosmos DB)         │
+│  "Build an e-commerce                 ┌─────────────────────────┐      │
+│   platform on AWS"                    │ Design A: ⭐⭐⭐⭐⭐ (5.0)   │      │
+│        │                              │ "API Gateway + Lambda    │      │
+│        ▼                              │  worked great for our    │      │
+│  ┌─────────────────┐                  │  traffic patterns"       │      │
+│  │ Extract Keywords│                  ├─────────────────────────┤      │
+│  │ [e-commerce,    │                  │ Design B: ⭐⭐ (2.0)      │      │
+│  │  platform, aws] │                  │ "Kubernetes was overkill │      │
+│  └────────┬────────┘                  │  for our small team"     │      │
+│           │                           └─────────────────────────┘      │
+│           ▼                                      │                      │
+│  ┌─────────────────┐                             │                      │
+│  │ Query Similar   │◄────────────────────────────┘                      │
+│  │ Past Designs    │                                                    │
+│  └────────┬────────┘                                                    │
+│           │                                                             │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                    │
+│  │ Generate Context│                                                    │
+│  │ "Patterns that  │                                                    │
+│  │  worked: ..."   │                                                    │
+│  │ "Patterns to    │                                                    │
+│  │  avoid: ..."    │                                                    │
+│  └────────┬────────┘                                                    │
+│           │                                                             │
+│           ▼                                                             │
+│  ┌─────────────────┐                                                    │
+│  │ Inject into     │                                                    │
+│  │ Carlos & Ronei  │                                                    │
+│  │ Design Prompts  │                                                    │
+│  └─────────────────┘                                                    │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Learning Context Format
+
+The historical context is formatted as markdown and prepended to design prompts:
+
+```markdown
+## Historical Learning from Past Deployments
+
+Based on 5 similar past designs:
+
+### Patterns That Worked Well (4-5 star deployments):
+- API Gateway + Lambda combination (avg rating: 4.8/5) - appeared in 3 deployments
+- Aurora Serverless for variable workloads (avg rating: 4.5/5) - appeared in 2 deployments
+
+### Patterns to Avoid:
+- **Warning**: Self-managed Kubernetes clusters - caused problems in 2 deployments
+- **Warning**: Manual scaling without CloudWatch alarms - caused problems in 1 deployment
+
+### Common Issues Encountered:
+- cold start latency in serverless (3 occurrences)
+- database connection pooling (2 occurrences)
+
+Apply these learnings while designing, but use your judgment - every project is different.
+```
+
+### Configuration
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `MIN_FEEDBACK_FOR_LEARNING` | 3 | Minimum records needed to include context |
+| `HIGH_RATING_THRESHOLD` | 4 | Minimum rating for "successful" patterns |
+| `LOW_RATING_THRESHOLD` | 2 | Maximum rating for "problematic" patterns |
+| `MAX_HISTORICAL_RESULTS` | 20 | Maximum feedback records to analyze |
+| `LEARNING_TIMEOUT_SECONDS` | 5.0 | Timeout for database queries |
+
+---
+
 ## API Endpoints
 
 ### Design Endpoints
@@ -496,6 +612,9 @@ backend/
 ├── graph.py              # LangGraph workflow definition
 ├── tasks.py              # Agent prompts and instructions
 ├── llm_pool.py           # Connection pooling implementation
+├── historical_learning.py # Historical learning from feedback
+├── feedback.py           # Deployment feedback storage (Cosmos DB)
+├── cache.py              # Design caching (Azure Redis)
 ├── main.py               # FastAPI server and endpoints
 ├── auth.py               # Authentication system
 ├── document_parser.py    # Document text extraction
@@ -560,9 +679,9 @@ frontend/
 ## Future Enhancements
 
 - [ ] **Validation Agent:** Pre-flight checks before Terraform generation
-- [ ] **Structured Outputs:** JSON schema enforcement for reports
-- [ ] **Caching:** Common pattern memoization
-- [ ] **Feedback Loop:** Learn from user corrections
+- [x] **Structured Outputs:** JSON schema enforcement for reports
+- [x] **Caching:** Design pattern caching with Azure Cache for Redis
+- [x] **Feedback Loop:** Learn from deployment outcomes (historical learning)
 - [ ] **Multi-Cloud:** Azure, GCP support alongside AWS
 - [ ] **Cost Estimation:** Real-time pricing integration
 
@@ -571,6 +690,7 @@ frontend/
 ## References
 
 - [LangGraph Documentation](https://python.langchain.com/docs/langgraph)
-- [TACTICAL_IMPROVEMENTS.md](../TACTICAL_IMPROVEMENTS.md) - Improvement roadmap
+- [ROADMAP.md](../ROADMAP.md) - Project roadmap and future plans
+- [architecture-diagram.md](../architecture-diagram.md) - System architecture diagrams
 - [CONNECTION_POOLING.md](../backend/CONNECTION_POOLING.md) - Pool implementation details
 - [ASYNC_DOCUMENT_PROCESSING.md](../backend/ASYNC_DOCUMENT_PROCESSING.md) - Document upload system

@@ -352,6 +352,8 @@ async def design(request: Request, req: dict, current_user: User = Depends(get_c
                 "cost": result.get("cost_data"),
                 "reliability": result.get("reliability_data"),
             },
+            # Reference materials found during design
+            "references": result.get("references", []),
         }
     except Exception as e:
         print(f"Error in design endpoint: {e}")
@@ -529,6 +531,8 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                     "cost": final_state.get("cost_data"),
                     "reliability": final_state.get("reliability_data"),
                 },
+                # Reference materials found during design
+                "references": final_state.get("references", []),
             }
 
             # Cache the result if appropriate (not clarification phase, has design)

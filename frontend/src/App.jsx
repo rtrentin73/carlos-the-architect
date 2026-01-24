@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3 } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import DeploymentTracker from './components/DeploymentTracker';
+import FeedbackDashboard from './components/FeedbackDashboard';
 import { useAuth } from './contexts/AuthContext';
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [isCacheHit, setIsCacheHit] = useState(false);
   const [agentChat, setAgentChat] = useState("");
+  const [references, setReferences] = useState([]);
   const [currentView, setCurrentView] = useState("blueprint");
   const [currentDesignId, setCurrentDesignId] = useState(null);
 
@@ -282,6 +284,10 @@ export default function App() {
         if (summary.terraform_validation) {
           setTerraformValidation(summary.terraform_validation);
         }
+        // Set references from web search
+        if (summary.references && summary.references.length > 0) {
+          setReferences(summary.references);
+        }
         break;
 
       case "error":
@@ -431,6 +437,7 @@ export default function App() {
     setTerraformCode("");
     setTerraformValidation("");
     setAgentChat("");
+    setReferences([]);
     setStreamingQuestions("");
     setActivityLog([]);
     setIsCacheHit(false);
@@ -648,6 +655,7 @@ export default function App() {
           <NavItem icon={<MessageCircle size={18}/>} label="Agent Chat" active={currentView === "agents"} onClick={() => setCurrentView("agents")} />
           <NavItem icon={<Layout size={18}/>} label="Help & Agents" active={currentView === "help"} onClick={() => setCurrentView("help")} />
           <NavItem icon={<Cloud size={18}/>} label="Analytics" active={currentView === "analytics"} onClick={() => setCurrentView("analytics")} />
+          <NavItem icon={<BarChart3 size={18}/>} label="Feedback" active={currentView === "feedback"} onClick={() => setCurrentView("feedback")} />
         </nav>
 
         {/* User info and logout */}
@@ -830,6 +838,18 @@ export default function App() {
                           Validation
                         </button>
                       )}
+                      {references.length > 0 && (
+                        <button
+                          onClick={() => setBlueprintTab("references")}
+                          className={`px-4 py-2 font-medium text-sm whitespace-nowrap ${
+                            blueprintTab === "references"
+                              ? "border-b-2 border-cyan-500 text-cyan-600"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          References ({references.length})
+                        </button>
+                      )}
                     </div>
 
                     {/* Design Content */}
@@ -865,6 +885,9 @@ export default function App() {
                       <div className="prose prose-slate max-w-none">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{terraformValidation}</ReactMarkdown>
                       </div>
+                    )}
+                    {blueprintTab === "references" && references.length > 0 && (
+                      <ReferencesSection references={references} />
                     )}
                     {blueprintTab === "carlos" && !design && (
                       <div className="h-full flex flex-col items-center justify-center text-slate-300">
@@ -1217,6 +1240,9 @@ export default function App() {
             )}
             {currentView === "analytics" && (
               <AnalyticsView history={history} />
+            )}
+            {currentView === "feedback" && (
+              <FeedbackDashboard />
             )}
           </div>
         </div>
@@ -1659,6 +1685,85 @@ function StreamingQuestionsView({ questions }) {
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{questions}</ReactMarkdown>
         </div>
         <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1" />
+      </div>
+    </div>
+  );
+}
+
+// References Section Component
+function ReferencesSection({ references }) {
+  // Group references by source
+  const groupedRefs = references.reduce((acc, ref) => {
+    const source = ref.source || 'Other';
+    if (!acc[source]) acc[source] = [];
+    acc[source].push(ref);
+    return acc;
+  }, {});
+
+  const sourceIcons = {
+    'AWS Docs': '🔶',
+    'Azure Docs': '🔷',
+    'Google Cloud Docs': '🔴',
+    'GitHub': '⚫',
+    'Medium': '📝',
+    'Dev.to': '💻',
+    'Stack Overflow': '📚',
+    'HashiCorp': '🟣',
+    'Kubernetes Docs': '☸️',
+    'Serverless Land': '⚡',
+    'Article': '📄',
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 rounded-r-lg">
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">📚</span>
+          <div>
+            <h3 className="font-bold text-cyan-900 text-lg">Reference Materials</h3>
+            <p className="text-cyan-700 text-sm mt-1">
+              These documentation and best practices were consulted during the design process.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {Object.entries(groupedRefs).map(([source, refs]) => (
+        <div key={source} className="space-y-3">
+          <h4 className="font-semibold text-slate-800 flex items-center gap-2">
+            <span>{sourceIcons[source] || '📄'}</span>
+            {source}
+          </h4>
+          <div className="space-y-3 pl-6">
+            {refs.map((ref, idx) => (
+              <div key={idx} className="border border-slate-200 rounded-lg p-4 bg-white hover:shadow-md transition">
+                <a
+                  href={ref.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 font-medium hover:underline"
+                >
+                  {ref.title}
+                </a>
+                {ref.snippet && (
+                  <p className="text-sm text-slate-600 mt-2 line-clamp-3">
+                    {ref.snippet}
+                  </p>
+                )}
+                <p className="text-xs text-slate-400 mt-2 truncate">
+                  {ref.url}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-6">
+        <p className="text-sm text-slate-600">
+          <strong>💡 Tip:</strong> These references were automatically found based on your requirements.
+          Check the design document for a "References" section where Carlos and Ronei cite how they used these sources.
+        </p>
       </div>
     </div>
   );
