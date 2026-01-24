@@ -1,6 +1,5 @@
 from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
-from langchain_openai import AzureChatOpenAI, ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from tasks import (
     REQUIREMENTS_GATHERING_INSTRUCTIONS,
@@ -13,7 +12,7 @@ from tasks import (
     DESIGN_RECOMMENDER_INSTRUCTIONS,
     TERRAFORM_CODER_INSTRUCTIONS,
 )
-import os
+from llm_pool import get_pool
 import operator
 
 class CarlosState(TypedDict):
@@ -35,89 +34,19 @@ class CarlosState(TypedDict):
     terraform_code: str  # Generated Terraform infrastructure code
 
 
-def create_llm(temperature: float = 0.7, use_mini: bool = False):
-    """
-    Create LLM client - supports both Azure OpenAI and Azure AI Foundry.
-
-    Args:
-        temperature: Sampling temperature (0.0-1.0)
-        use_mini: If True, use GPT-4o-mini for cost optimization on simple tasks
-    """
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY")
-
-    # Choose model based on task complexity
-    if use_mini:
-        model = os.getenv("AZURE_OPENAI_MINI_DEPLOYMENT_NAME", "gpt-4o-mini")
-    else:
-        model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
-
-    if not endpoint or not api_key:
-        raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set")
-
-    # Azure AI Foundry endpoints contain 'services.ai.azure.com'
-    if "services.ai.azure.com" in endpoint:
-        # Azure AI Foundry - use OpenAI-compatible client
-        # The endpoint should already be in the correct format
-        # e.g., https://<resource>.services.ai.azure.com/models/<deployment>/chat/completions?api-version=xxx
-        # Just use it as-is
-        base_url = endpoint.rstrip("/")
-
-        return ChatOpenAI(
-            model=model,
-            base_url=base_url,
-            api_key=api_key,
-            temperature=temperature,
-            default_headers={"api-key": api_key},
-        )
-    else:
-        # Traditional Azure OpenAI
-        return AzureChatOpenAI(
-            azure_deployment=model,
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
-            azure_endpoint=endpoint,
-            api_key=api_key,
-            temperature=temperature,
-        )
-
-
-# Lazy LLM initialization - created on first use
-_llm = None
-_ronei_llm = None
-_mini_llm = None
-
-
-def get_llm():
-    """Get or create the main LLM instance (GPT-4o for complex tasks)."""
-    global _llm
-    if _llm is None:
-        _llm = create_llm(temperature=0.7, use_mini=False)
-    return _llm
-
-
-def get_ronei_llm():
-    """Get or create Ronei's LLM instance (GPT-4o, more creative)."""
-    global _ronei_llm
-    if _ronei_llm is None:
-        _ronei_llm = create_llm(temperature=0.9, use_mini=False)
-    return _ronei_llm
-
-
-def get_mini_llm():
-    """Get or create mini LLM instance (GPT-4o-mini for simple analysis tasks)."""
-    global _mini_llm
-    if _mini_llm is None:
-        _mini_llm = create_llm(temperature=0.7, use_mini=True)
-    return _mini_llm
+# Connection pool is now managed in llm_pool.py
+# Agents will use pool context managers: pool.get_main_llm(), pool.get_ronei_llm(), pool.get_mini_llm()
 
 
 async def requirements_gathering_node(state: CarlosState):
     """Ask clarifying questions about requirements before designing (uses mini model with caching)."""
+    pool = get_pool()
     messages = [
         SystemMessage(content=REQUIREMENTS_GATHERING_INSTRUCTIONS),
         HumanMessage(content=f"Initial User Requirements:\n{state['requirements']}")
     ]
-    response = await get_mini_llm().ainvoke(messages)
+    async with pool.get_mini_llm() as llm:
+        response = await llm.ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Requirements Team:**\n" + response.content + "\n\n"
 
@@ -154,7 +83,9 @@ User's Answers to Clarifying Questions:
         HumanMessage(content=user_content)
     ]
 
-    response = await get_mini_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_mini_llm() as llm:
+        response = await llm.ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Refined Requirements:**\n" + response.content + "\n\n"
 
@@ -222,12 +153,14 @@ async def carlos_design_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
 
+    pool = get_pool()
     response = ""
     tokens = []
-    async for chunk in get_llm().astream(messages):
-        token = chunk.content
-        response += token
-        tokens.append(token)
+    async with pool.get_main_llm() as llm:
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     print(f"Design response: {response}")
     convo = state.get("conversation", "")
     convo += "**Carlos:**\n" + response + "\n\n"
@@ -285,12 +218,14 @@ async def ronei_design_node(state: CarlosState):
         HumanMessage(content=user_content)
     ]
 
+    pool = get_pool()
     response = ""
     tokens = []
-    async for chunk in get_ronei_llm().astream(messages):
-        token = chunk.content
-        response += token
-        tokens.append(token)
+    async with pool.get_ronei_llm() as llm:
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            response += token
+            tokens.append(token)
     print(f"Ronei design response: {response}")
     convo = state.get("conversation", "")
     convo += "**Ronei:**\n" + response + "\n\n"
@@ -308,7 +243,9 @@ async def security_node(state: CarlosState):
         SystemMessage(content=SECURITY_ANALYST_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
-    response = await get_mini_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_mini_llm() as llm:
+        response = await llm.ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Security Analyst:**\n" + response.content + "\n\n"
     return {"security_report": response.content, "conversation": convo}
@@ -325,7 +262,9 @@ async def cost_node(state: CarlosState):
         SystemMessage(content=COST_ANALYST_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
-    response = await get_mini_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_mini_llm() as llm:
+        response = await llm.ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Cost Specialist:**\n" + response.content + "\n\n"
     return {"cost_report": response.content, "conversation": convo}
@@ -342,7 +281,9 @@ async def reliability_node(state: CarlosState):
         SystemMessage(content=RELIABILITY_ENGINEER_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
-    response = await get_mini_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_mini_llm() as llm:
+        response = await llm.ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**SRE:**\n" + response.content + "\n\n"
     return {"reliability_report": response.content, "conversation": convo}
@@ -360,7 +301,9 @@ async def auditor_node(state: CarlosState):
         SystemMessage(content=AUDITOR_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
-    response = await get_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_main_llm() as llm:
+        response = await llm.ainvoke(messages)
     status = "approved" if "APPROVED" in response.content.upper() else "needs_revision"
     convo = state.get("conversation", "")
     convo += "**Chief Auditor:**\n" + response.content + "\n\n"
@@ -382,7 +325,9 @@ async def recommender_node(state: CarlosState):
         SystemMessage(content=DESIGN_RECOMMENDER_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
-    response = await get_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_main_llm() as llm:
+        response = await llm.ainvoke(messages)
     content = (response.content or "").strip()
     upper = content.upper()
     if not (upper.startswith("RECOMMEND: CARLOS") or upper.startswith("RECOMMEND: RONEI")):
@@ -416,7 +361,9 @@ async def terraform_coder_node(state: CarlosState):
         SystemMessage(content=TERRAFORM_CODER_INSTRUCTIONS),
         HumanMessage(content=user_content)
     ]
-    response = await get_llm().ainvoke(messages)
+    pool = get_pool()
+    async with pool.get_main_llm() as llm:
+        response = await llm.ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Terraform Coder:**\n" + response.content + "\n\n"
     return {"terraform_code": response.content, "conversation": convo}

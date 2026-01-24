@@ -7,7 +7,9 @@ from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
+from contextlib import asynccontextmanager
 from graph import carlos_graph
+from llm_pool import get_pool
 from auth import (
     User,
     UserCreate,
@@ -21,8 +23,49 @@ from auth import (
 from document_parser import extract_text_from_file
 import json
 from datetime import datetime, timezone, timedelta
+import httpx
 
-app = FastAPI(title="Carlos the Architect API")
+# HTTP client for persistent connections (connection pooling)
+http_client: httpx.AsyncClient = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan - startup and shutdown."""
+    global http_client
+
+    # Startup
+    print("🚀 Starting Carlos the Architect backend...")
+
+    # Initialize LLM connection pool
+    pool = get_pool(size=10)
+    await pool.initialize()
+
+    # Initialize HTTP client with connection pooling
+    http_client = httpx.AsyncClient(
+        timeout=30.0,
+        limits=httpx.Limits(
+            max_connections=100,
+            max_keepalive_connections=20
+        )
+    )
+    print("🌐 HTTP connection pool initialized")
+    print("✅ Backend ready to serve requests")
+
+    yield
+
+    # Shutdown
+    print("🛑 Shutting down Carlos the Architect backend...")
+
+    # Close HTTP client
+    if http_client:
+        await http_client.aclose()
+        print("🌐 HTTP connection pool closed")
+
+    print("✅ Shutdown complete")
+
+
+app = FastAPI(title="Carlos the Architect API", lifespan=lifespan)
 
 # Get allowed origins from environment or use defaults
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
@@ -39,7 +82,13 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     """Health check endpoint for container orchestration."""
-    return {"status": "healthy"}
+    pool = get_pool()
+    pool_stats = pool.get_pool_stats()
+
+    return {
+        "status": "healthy",
+        "pools": pool_stats
+    }
 
 
 # Auth endpoints
