@@ -85,10 +85,10 @@ class LLMPool:
         self.ronei_pool: list[AzureChatOpenAI | ChatOpenAI] = []
         self.mini_pool: list[AzureChatOpenAI | ChatOpenAI] = []
 
-        # Track which connections are currently in use
-        self.main_in_use: set[AzureChatOpenAI | ChatOpenAI] = set()
-        self.ronei_in_use: set[AzureChatOpenAI | ChatOpenAI] = set()
-        self.mini_in_use: set[AzureChatOpenAI | ChatOpenAI] = set()
+        # Track which pool indices are currently in use (not the objects themselves)
+        self.main_in_use: set[int] = set()
+        self.ronei_in_use: set[int] = set()
+        self.mini_in_use: set[int] = set()
 
         # Locks for thread-safe pool access
         self.main_lock = asyncio.Lock()
@@ -122,27 +122,29 @@ class LLMPool:
         Get main LLM from the pool (GPT-4o, temp 0.7).
         Used by: Carlos, Auditor, Recommender, Terraform Coder.
         """
+        idx = None
+        llm = None
+
         async with self.main_lock:
-            # Find available LLM in pool
-            llm = None
-            for candidate in self.main_pool:
-                if candidate not in self.main_in_use:
-                    llm = candidate
+            # Find available LLM in pool by checking indices
+            for i in range(len(self.main_pool)):
+                if i not in self.main_in_use:
+                    idx = i
+                    llm = self.main_pool[i]
+                    self.main_in_use.add(idx)
                     break
 
             if llm is None:
                 # Pool exhausted, create temporary connection
                 print("⚠️  Main LLM pool exhausted, creating temporary connection")
                 llm = create_llm(temperature=0.7, use_mini=False)
-            else:
-                self.main_in_use.add(llm)
 
         try:
             yield llm
         finally:
-            async with self.main_lock:
-                if llm in self.main_in_use:
-                    self.main_in_use.remove(llm)
+            if idx is not None:
+                async with self.main_lock:
+                    self.main_in_use.discard(idx)
 
     @asynccontextmanager
     async def get_ronei_llm(self):
@@ -150,27 +152,29 @@ class LLMPool:
         Get Ronei LLM from the pool (GPT-4o, temp 0.9).
         Used by: Ronei only.
         """
+        idx = None
+        llm = None
+
         async with self.ronei_lock:
-            # Find available LLM in pool
-            llm = None
-            for candidate in self.ronei_pool:
-                if candidate not in self.ronei_in_use:
-                    llm = candidate
+            # Find available LLM in pool by checking indices
+            for i in range(len(self.ronei_pool)):
+                if i not in self.ronei_in_use:
+                    idx = i
+                    llm = self.ronei_pool[i]
+                    self.ronei_in_use.add(idx)
                     break
 
             if llm is None:
                 # Pool exhausted, create temporary connection
                 print("⚠️  Ronei LLM pool exhausted, creating temporary connection")
                 llm = create_llm(temperature=0.9, use_mini=False)
-            else:
-                self.ronei_in_use.add(llm)
 
         try:
             yield llm
         finally:
-            async with self.ronei_lock:
-                if llm in self.ronei_in_use:
-                    self.ronei_in_use.remove(llm)
+            if idx is not None:
+                async with self.ronei_lock:
+                    self.ronei_in_use.discard(idx)
 
     @asynccontextmanager
     async def get_mini_llm(self):
@@ -178,27 +182,29 @@ class LLMPool:
         Get mini LLM from the pool (GPT-4o-mini, temp 0.7).
         Used by: Requirements Gathering, Security, Cost, Reliability analysts.
         """
+        idx = None
+        llm = None
+
         async with self.mini_lock:
-            # Find available LLM in pool
-            llm = None
-            for candidate in self.mini_pool:
-                if candidate not in self.mini_in_use:
-                    llm = candidate
+            # Find available LLM in pool by checking indices
+            for i in range(len(self.mini_pool)):
+                if i not in self.mini_in_use:
+                    idx = i
+                    llm = self.mini_pool[i]
+                    self.mini_in_use.add(idx)
                     break
 
             if llm is None:
                 # Pool exhausted, create temporary connection
                 print("⚠️  Mini LLM pool exhausted, creating temporary connection")
                 llm = create_llm(temperature=0.7, use_mini=True)
-            else:
-                self.mini_in_use.add(llm)
 
         try:
             yield llm
         finally:
-            async with self.mini_lock:
-                if llm in self.mini_in_use:
-                    self.mini_in_use.remove(llm)
+            if idx is not None:
+                async with self.mini_lock:
+                    self.mini_in_use.discard(idx)
 
     def get_pool_stats(self) -> dict:
         """Get current pool usage statistics."""
