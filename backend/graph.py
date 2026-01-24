@@ -1,6 +1,7 @@
 from typing import TypedDict, Annotated
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
 from tasks import (
     REQUIREMENTS_GATHERING_INSTRUCTIONS,
     CARLOS_INSTRUCTIONS,
@@ -111,12 +112,12 @@ def get_mini_llm():
 
 
 async def requirements_gathering_node(state: CarlosState):
-    """Ask clarifying questions about requirements before designing (uses mini model)."""
-    prompt = (
-        f"{REQUIREMENTS_GATHERING_INSTRUCTIONS}\n\n"
-        f"Initial User Requirements:\n{state['requirements']}"
-    )
-    response = await get_mini_llm().ainvoke(prompt)
+    """Ask clarifying questions about requirements before designing (uses mini model with caching)."""
+    messages = [
+        SystemMessage(content=REQUIREMENTS_GATHERING_INSTRUCTIONS),
+        HumanMessage(content=f"Initial User Requirements:\n{state['requirements']}")
+    ]
+    response = await get_mini_llm().ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Requirements Team:**\n" + response.content + "\n\n"
 
@@ -129,7 +130,7 @@ async def requirements_gathering_node(state: CarlosState):
 
 
 async def refine_requirements_node(state: CarlosState):
-    """Refine requirements based on user's answers (uses mini model for text synthesis)."""
+    """Refine requirements based on user's answers (uses mini model with caching)."""
     user_answers = state.get('user_answers', '')
 
     if not user_answers:
@@ -137,19 +138,23 @@ async def refine_requirements_node(state: CarlosState):
         return {"refined_requirements": state['requirements']}
 
     # Create refined requirements by combining original + answers
-    refine_prompt = f"""Given the initial requirements and the user's answers to clarifying questions,
+    system_instruction = """Given the initial requirements and the user's answers to clarifying questions,
 create a comprehensive, refined requirements document that incorporates all the information.
-
-Initial Requirements:
-{state['requirements']}
-
-User's Answers to Clarifying Questions:
-{user_answers}
-
 Create a single, well-structured requirements document that includes all relevant details from both.
 Use markdown format with clear sections. Be specific and concrete."""
 
-    response = await get_mini_llm().ainvoke(refine_prompt)
+    user_content = f"""Initial Requirements:
+{state['requirements']}
+
+User's Answers to Clarifying Questions:
+{user_answers}"""
+
+    messages = [
+        SystemMessage(content=system_instruction),
+        HumanMessage(content=user_content)
+    ]
+
+    response = await get_mini_llm().ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Refined Requirements:**\n" + response.content + "\n\n"
 
@@ -208,12 +213,18 @@ async def carlos_design_node(state: CarlosState):
     # Use refined_requirements if available, otherwise fall back to original requirements
     requirements = state.get('refined_requirements') or state['requirements']
 
-    prompt = f"{CARLOS_INSTRUCTIONS}\n\nUser requirements: {requirements}" + (
-        f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
-    )
+    user_content = f"User requirements: {requirements}"
+    if extra_context:
+        user_content += f"\n\nAdditional context:\n{extra_context}"
+
+    messages = [
+        SystemMessage(content=CARLOS_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+
     response = ""
     tokens = []
-    async for chunk in get_llm().astream(prompt):
+    async for chunk in get_llm().astream(messages):
         token = chunk.content
         response += token
         tokens.append(token)
@@ -265,12 +276,18 @@ async def ronei_design_node(state: CarlosState):
     # Use refined_requirements if available, otherwise fall back to original requirements
     requirements = state.get('refined_requirements') or state['requirements']
 
-    prompt = f"{RONEI_INSTRUCTIONS}\n\nUser requirements: {requirements}" + (
-        f"\n\nAdditional context:\n{extra_context}" if extra_context else ""
-    )
+    user_content = f"User requirements: {requirements}"
+    if extra_context:
+        user_content += f"\n\nAdditional context:\n{extra_context}"
+
+    messages = [
+        SystemMessage(content=RONEI_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+
     response = ""
     tokens = []
-    async for chunk in get_ronei_llm().astream(prompt):
+    async for chunk in get_ronei_llm().astream(messages):
         token = chunk.content
         response += token
         tokens.append(token)
@@ -281,57 +298,69 @@ async def ronei_design_node(state: CarlosState):
 
 
 async def security_node(state: CarlosState):
-    """Security analyst reviews the design (uses mini model for cost optimization)."""
-    prompt = (
-        f"{SECURITY_ANALYST_INSTRUCTIONS}\n\n"
+    """Security analyst reviews the design (uses mini model with caching)."""
+    user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a security perspective."
     )
-    response = await get_mini_llm().ainvoke(prompt)
+    messages = [
+        SystemMessage(content=SECURITY_ANALYST_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+    response = await get_mini_llm().ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Security Analyst:**\n" + response.content + "\n\n"
     return {"security_report": response.content, "conversation": convo}
 
 
 async def cost_node(state: CarlosState):
-    """Cost optimization specialist reviews the design (uses mini model for cost optimization)."""
-    prompt = (
-        f"{COST_ANALYST_INSTRUCTIONS}\n\n"
+    """Cost optimization specialist reviews the design (uses mini model with caching)."""
+    user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a cost optimization perspective."
     )
-    response = await get_mini_llm().ainvoke(prompt)
+    messages = [
+        SystemMessage(content=COST_ANALYST_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+    response = await get_mini_llm().ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Cost Specialist:**\n" + response.content + "\n\n"
     return {"cost_report": response.content, "conversation": convo}
 
 
 async def reliability_node(state: CarlosState):
-    """SRE reviews the design (uses mini model for cost optimization)."""
-    prompt = (
-        f"{RELIABILITY_ENGINEER_INSTRUCTIONS}\n\n"
+    """SRE reviews the design (uses mini model with caching)."""
+    user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"Please review both designs from a reliability and operations perspective."
     )
-    response = await get_mini_llm().ainvoke(prompt)
+    messages = [
+        SystemMessage(content=RELIABILITY_ENGINEER_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+    response = await get_mini_llm().ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**SRE:**\n" + response.content + "\n\n"
     return {"reliability_report": response.content, "conversation": convo}
 
 async def auditor_node(state: CarlosState):
-    """Final auditor aggregates all specialist feedback."""
-    prompt = (
-        f"{AUDITOR_INSTRUCTIONS}\n\n"
+    """Final auditor aggregates all specialist feedback (uses caching)."""
+    user_content = (
         f"=== Carlos' Design ===\n{state['design_doc']}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
         f"=== Security Report ===\n{state.get('security_report', '')}\n\n"
         f"=== Cost Report ===\n{state.get('cost_report', '')}\n\n"
         f"=== Reliability Report ===\n{state.get('reliability_report', '')}\n\n"
     )
-    response = await get_llm().ainvoke(prompt)
+    messages = [
+        SystemMessage(content=AUDITOR_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+    response = await get_llm().ainvoke(messages)
     status = "approved" if "APPROVED" in response.content.upper() else "needs_revision"
     convo = state.get("conversation", "")
     convo += "**Chief Auditor:**\n" + response.content + "\n\n"
@@ -339,9 +368,8 @@ async def auditor_node(state: CarlosState):
 
 
 async def recommender_node(state: CarlosState):
-    """Recommend Carlos vs Ronei based on all outputs."""
-    prompt = (
-        f"{DESIGN_RECOMMENDER_INSTRUCTIONS}\n\n"
+    """Recommend Carlos vs Ronei based on all outputs (uses caching)."""
+    user_content = (
         f"=== User Requirements ===\n{state['requirements']}\n\n"
         f"=== Carlos' Design ===\n{state.get('design_doc', '')}\n\n"
         f"=== Ronei's Design ===\n{state.get('ronei_design', '')}\n\n"
@@ -350,7 +378,11 @@ async def recommender_node(state: CarlosState):
         f"=== Reliability Report ===\n{state.get('reliability_report', '')}\n\n"
         f"=== Chief Auditor Verdict ===\n{state.get('audit_report', '')}\n\n"
     )
-    response = await get_llm().ainvoke(prompt)
+    messages = [
+        SystemMessage(content=DESIGN_RECOMMENDER_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+    response = await get_llm().ainvoke(messages)
     content = (response.content or "").strip()
     upper = content.upper()
     if not (upper.startswith("RECOMMEND: CARLOS") or upper.startswith("RECOMMEND: RONEI")):
@@ -366,7 +398,7 @@ async def recommender_node(state: CarlosState):
 
 
 async def terraform_coder_node(state: CarlosState):
-    """Generate Terraform code for the recommended design."""
+    """Generate Terraform code for the recommended design (uses caching)."""
     # Determine which design was recommended
     recommendation = state.get("recommendation", "")
     recommended_design = state.get("design_doc", "")  # Default to Carlos
@@ -374,14 +406,17 @@ async def terraform_coder_node(state: CarlosState):
     if "RECOMMEND: RONEI" in recommendation.upper():
         recommended_design = state.get("ronei_design", "")
 
-    prompt = (
-        f"{TERRAFORM_CODER_INSTRUCTIONS}\n\n"
+    user_content = (
         f"=== User Requirements ===\n{state['requirements']}\n\n"
         f"=== Recommended Design ===\n{recommended_design}\n\n"
         f"=== Design Recommendation ===\n{recommendation}\n\n"
         f"Please generate production-ready Terraform code for this architecture."
     )
-    response = await get_llm().ainvoke(prompt)
+    messages = [
+        SystemMessage(content=TERRAFORM_CODER_INSTRUCTIONS),
+        HumanMessage(content=user_content)
+    ]
+    response = await get_llm().ainvoke(messages)
     convo = state.get("conversation", "")
     convo += "**Terraform Coder:**\n" + response.content + "\n\n"
     return {"terraform_code": response.content, "conversation": convo}
