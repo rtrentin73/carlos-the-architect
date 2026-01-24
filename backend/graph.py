@@ -46,17 +46,10 @@ def create_llm(temperature: float = 0.7):
     # Azure AI Foundry endpoints contain 'services.ai.azure.com'
     if "services.ai.azure.com" in endpoint:
         # Azure AI Foundry - use OpenAI-compatible client
-        # Foundry inference endpoint format
+        # The endpoint should already be in the correct format
+        # e.g., https://<resource>.services.ai.azure.com/models/<deployment>/chat/completions?api-version=xxx
+        # Just use it as-is
         base_url = endpoint.rstrip("/")
-        if not base_url.endswith("/models"):
-            base_url = f"{base_url}/models"
-
-        # Add api-version query parameter for Azure AI Foundry
-        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
-        if "?" in base_url:
-            base_url = f"{base_url}&api-version={api_version}"
-        else:
-            base_url = f"{base_url}?api-version={api_version}"
 
         return ChatOpenAI(
             model=model,
