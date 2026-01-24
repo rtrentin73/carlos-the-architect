@@ -1,5 +1,6 @@
 """Document parsing utilities for extracting text from various file formats."""
 import io
+import os
 from typing import Optional
 from fastapi import UploadFile, HTTPException
 from pypdf import PdfReader
@@ -7,7 +8,7 @@ from docx import Document
 import openpyxl
 
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB (increased for async processing)
 
 
 async def extract_text_from_file(file: UploadFile) -> str:
@@ -136,3 +137,57 @@ def _extract_from_text(content: bytes) -> str:
             continue
 
     raise ValueError("Could not decode text file with any supported encoding")
+
+
+def extract_text_from_path(file_path: str) -> str:
+    """
+    Extract text content from a file path (for async background processing).
+
+    Args:
+        file_path: Absolute path to the file
+
+    Returns:
+        Extracted text content
+
+    Raises:
+        ValueError: If file cannot be processed or is empty
+    """
+    if not os.path.exists(file_path):
+        raise ValueError(f"File not found: {file_path}")
+
+    file_size = os.path.getsize(file_path)
+    if file_size == 0:
+        raise ValueError("File is empty")
+
+    if file_size > MAX_FILE_SIZE:
+        raise ValueError(f"File too large. Maximum size is {MAX_FILE_SIZE / 1024 / 1024}MB")
+
+    # Get file extension
+    extension = file_path.lower().split(".")[-1] if "." in file_path else ""
+
+    # Read file content
+    with open(file_path, "rb") as f:
+        content = f.read()
+
+    try:
+        # Extract text based on file type
+        if extension == "pdf":
+            text = _extract_from_pdf(content)
+        elif extension in ["docx", "doc"]:
+            text = _extract_from_docx(content)
+        elif extension in ["xlsx", "xls"]:
+            text = _extract_from_excel(content)
+        elif extension in ["txt", "md", "markdown", "text"]:
+            text = _extract_from_text(content)
+        else:
+            # Try to read as plain text
+            text = _extract_from_text(content)
+
+        # Validate extracted content
+        if not text or not text.strip():
+            raise ValueError("Could not extract any text from the document")
+
+        return text.strip()
+
+    except Exception as e:
+        raise ValueError(f"Error processing file: {str(e)}")

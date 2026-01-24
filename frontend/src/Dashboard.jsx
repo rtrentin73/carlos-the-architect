@@ -172,10 +172,10 @@ export default function Dashboard() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (10MB)
-    const maxSize = 10 * 1024 * 1024;
+    // Validate file size (50MB - increased for async processing)
+    const maxSize = 50 * 1024 * 1024;
     if (file.size > maxSize) {
-      addLog('ERROR', '❌ File too large. Maximum size is 10MB');
+      addLog('ERROR', '❌ File too large. Maximum size is 50MB');
       return;
     }
 
@@ -186,6 +186,7 @@ export default function Dashboard() {
       const formData = new FormData();
       formData.append('file', file);
 
+      // Start async document processing
       const response = await fetch(`${backendBaseUrl}/upload-document`, {
         method: 'POST',
         headers: {
@@ -200,24 +201,72 @@ export default function Dashboard() {
       }
 
       const data = await response.json();
+      const taskId = data.task_id;
 
-      // Merge extracted text with existing input
-      const mergedText = input.trim()
-        ? `${input.trim()}\n\n${data.extracted_text}`
-        : data.extracted_text;
+      addLog('INFO', `⏳ Processing ${file.name}...`);
 
-      setInput(mergedText);
-      setUploadedFile({ name: file.name, message: data.message });
+      // Poll for completion
+      const pollInterval = 2000; // 2 seconds
+      const maxAttempts = 60; // 2 minutes max
+      let attempts = 0;
 
-      addLog('SUCCESS', data.message);
+      const checkStatus = async () => {
+        try {
+          const statusResponse = await fetch(`${backendBaseUrl}/documents/${taskId}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
 
-      // Clear the file after a few seconds
-      setTimeout(() => setUploadedFile(null), 5000);
+          if (!statusResponse.ok) {
+            throw new Error('Failed to check document status');
+          }
+
+          const statusData = await statusResponse.json();
+
+          if (statusData.status === 'completed') {
+            // Merge extracted text with existing input
+            const mergedText = input.trim()
+              ? `${input.trim()}\n\n${statusData.extracted_text}`
+              : statusData.extracted_text;
+
+            setInput(mergedText);
+            setUploadedFile({ name: file.name, message: `✅ ${file.name} processed successfully` });
+
+            addLog('SUCCESS', `✅ ${file.name} processed successfully`);
+            setUploading(false);
+
+            // Clear the file after a few seconds
+            setTimeout(() => setUploadedFile(null), 5000);
+
+          } else if (statusData.status === 'failed') {
+            addLog('ERROR', `❌ Failed to process ${file.name}: ${statusData.error || 'Unknown error'}`);
+            setUploading(false);
+
+          } else {
+            // Still processing, check again
+            attempts++;
+            if (attempts < maxAttempts) {
+              setTimeout(checkStatus, pollInterval);
+            } else {
+              addLog('ERROR', `❌ Document processing timeout after ${maxAttempts * pollInterval / 1000}s`);
+              setUploading(false);
+            }
+          }
+
+        } catch (error) {
+          addLog('ERROR', `❌ Status check failed: ${error.message}`);
+          setUploading(false);
+        }
+      };
+
+      // Start polling
+      checkStatus();
 
     } catch (error) {
       addLog('ERROR', `❌ Upload failed: ${error.message}`);
-    } finally {
       setUploading(false);
+    } finally {
       // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';

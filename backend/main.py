@@ -1,9 +1,10 @@
 from dotenv import load_dotenv
 import os
+import tempfile
 
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -20,7 +21,8 @@ from auth import (
     get_current_active_user,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
-from document_parser import extract_text_from_file
+from document_parser import extract_text_from_path, MAX_FILE_SIZE
+from document_tasks import create_task, get_task, get_user_tasks, TaskStatus
 import json
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -121,38 +123,138 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
 
+async def _process_document_background(task_id: str, file_path: str):
+    """Background task to process document"""
+    task = get_task(task_id)
+    if not task:
+        return
+
+    try:
+        task.update_status(TaskStatus.PROCESSING)
+        print(f"📄 Processing document {task.filename} for task {task_id}")
+
+        # Extract text from file
+        extracted_text = extract_text_from_path(file_path)
+
+        # Update task with result
+        task.update_status(TaskStatus.COMPLETED, extracted_text=extracted_text)
+        print(f"✅ Document {task.filename} processed successfully (task {task_id})")
+
+    except Exception as e:
+        error_msg = str(e)
+        task.update_status(TaskStatus.FAILED, error=error_msg)
+        print(f"❌ Failed to process document {task.filename}: {error_msg}")
+
+    finally:
+        # Clean up temp file
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            print(f"⚠️  Failed to remove temp file {file_path}: {e}")
+
+
 @app.post("/upload-document")
 async def upload_document(
     file: UploadFile = File(...),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Upload a document and extract its text content.
+    Upload a document for asynchronous text extraction.
 
-    Supports: PDF, DOCX, TXT, MD, XLSX (max 10MB)
+    Supports: PDF, DOCX, TXT, MD, XLSX (max 50MB)
 
-    Returns the extracted text that can be merged with user requirements.
+    Returns a task ID to poll for processing status.
+    Use GET /documents/{task_id} to check status and retrieve extracted text.
     """
-    print(f"Document upload from {current_user.username}: {file.filename}")
+    print(f"📤 Document upload from {current_user.username}: {file.filename}")
+
+    # Read file content
+    content = await file.read()
+    file_size = len(content)
+
+    # Validate file size
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE / 1024 / 1024:.0f}MB"
+        )
+
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    # Create task
+    task = create_task(file.filename or "unknown", current_user.username, file_size)
+
+    # Save to temp file
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, f"{task.task_id}_{file.filename}")
 
     try:
-        # Extract text from the uploaded file
-        extracted_text = await extract_text_from_file(file)
+        with open(temp_path, "wb") as f:
+            f.write(content)
+
+        # Schedule background processing
+        background_tasks.add_task(_process_document_background, task.task_id, temp_path)
 
         return {
-            "success": True,
+            "task_id": task.task_id,
             "filename": file.filename,
-            "extracted_text": extracted_text,
-            "message": f"📄 {file.filename} received by Carlos and Ronei"
+            "status": task.status.value,
+            "message": f"⏳ Processing {file.filename}... Check /documents/{task.task_id} for status"
         }
-    except HTTPException as e:
-        raise e
+
     except Exception as e:
-        print(f"Error uploading document: {e}")
+        # Clean up task and file on error
+        task.update_status(TaskStatus.FAILED, error=str(e))
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to process document: {str(e)}"
+            detail=f"Failed to save document: {str(e)}"
         )
+
+
+@app.get("/documents/{task_id}")
+async def get_document_status(
+    task_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Check document processing status and retrieve extracted text.
+
+    Returns:
+        - task_id: Unique task identifier
+        - filename: Original filename
+        - status: pending | processing | completed | failed
+        - extracted_text: Extracted text (only when completed)
+        - error: Error message (only when failed)
+    """
+    task = get_task(task_id)
+
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    # Verify task belongs to user
+    if task.username != current_user.username:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return task.to_dict()
+
+
+@app.get("/documents")
+async def list_user_documents(
+    current_user: User = Depends(get_current_active_user),
+    limit: int = 10
+):
+    """List recent document processing tasks for current user"""
+    tasks = get_user_tasks(current_user.username, limit=limit)
+    return {
+        "tasks": [task.to_dict() for task in tasks],
+        "count": len(tasks)
+    }
 
 
 @app.post("/design")
