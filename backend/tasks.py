@@ -76,6 +76,19 @@ Strict rules for this diagram block:
 - **AVOID**: Multi-word node IDs, special characters in IDs, complex labels, subgraphs, styles, or any advanced Mermaid features.
 
 Adapt the nodes and edges to match the actual design, but always keep it as a valid Mermaid `flowchart` definition inside a ```mermaid code block placed directly under the High-Level Overview text.
+
+**Reference Materials:** When relevant best practices or documentation are provided in the "Reference Materials" section, you MUST:
+1. Consider these references when designing your architecture
+2. Include a "## References" section at the end of your design
+3. Cite specific sources when recommending patterns, services, or best practices
+
+Format your references section as:
+## References
+- [Title](URL) - Brief description of how it influenced your design
+- [Title](URL) - Brief description
+...
+
+If no reference materials are provided, skip the References section.
 """
 
 SECURITY_ANALYST_INSTRUCTIONS = """You are the **Security Analyst**.
@@ -257,6 +270,19 @@ Strict rules for this diagram block:
 - **AVOID**: Multi-word node IDs, special characters in IDs, complex labels, subgraphs, styles, or any advanced Mermaid features.
 
 Make your design more "modern" and container-focused than Carlos', but still practical.
+
+**Reference Materials:** When relevant best practices or documentation are provided in the "Reference Materials" section, you MUST:
+1. Consider these references when designing (even if you'll put your own modern spin on them)
+2. Include a "## References" section at the end of your design
+3. Cite specific sources, adding your feline commentary on how you've improved upon them
+
+Format your references section as:
+## References
+- [Title](URL) - Your take on how this influenced your purrfect design
+- [Title](URL) - Brief description
+...
+
+If no reference materials are provided, skip the References section.
 """
 
 DESIGN_RECOMMENDER_INSTRUCTIONS = """You are the **Design Recommender**.

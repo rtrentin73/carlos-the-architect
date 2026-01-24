@@ -131,6 +131,7 @@ jobs:
             --namespace=carlos \
             --from-literal=azure-openai-endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
             --from-literal=azure-openai-api-key=${{ secrets.AZURE_OPENAI_API_KEY }} \
+            --from-literal=tavily-api-key=${{ secrets.TAVILY_API_KEY }} \
             --from-literal=redis-host=${{ needs.terraform.outputs.redis_hostname }} \
             --from-literal=redis-password=${{ needs.terraform.outputs.redis_key }} \
             --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \

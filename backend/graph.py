@@ -2,6 +2,7 @@ from typing import TypedDict, Annotated, Optional
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage
 from historical_learning import get_historical_context
+from reference_search import get_reference_context
 from tasks import (
     REQUIREMENTS_GATHERING_INSTRUCTIONS,
     CARLOS_INSTRUCTIONS,
@@ -60,6 +61,9 @@ class CarlosState(TypedDict):
     reliability_data: Optional[dict]  # Structured reliability metrics data
     # Historical learning context from past feedback
     historical_context: str  # Learning context from past deployments
+    # Reference search context from web search
+    reference_context: str  # Formatted references for prompts
+    references: list  # Structured reference data for frontend
 
 
 # Connection pool is now managed in llm_pool.py
@@ -166,17 +170,52 @@ async def historical_learning_node(state: CarlosState):
     return {"historical_context": historical_context}
 
 
+async def reference_search_node(state: CarlosState):
+    """Search for relevant documentation and best practices before design generation.
+
+    This node queries the web for architecture references, best practices,
+    and documentation relevant to the user's requirements. The results are
+    injected into design prompts so Carlos and Ronei can cite authoritative sources.
+    """
+    requirements = state.get('refined_requirements') or state['requirements']
+    priorities = state.get("priorities", {}) or {}
+
+    # Get cloud provider hint from priorities if available
+    cloud_provider = priorities.get("cloud_provider")
+
+    try:
+        reference_context, references = await get_reference_context(
+            requirements=requirements,
+            cloud_provider=cloud_provider
+        )
+        if reference_context:
+            print(f"  Reference context loaded: {len(reference_context)} chars, {len(references)} refs")
+        else:
+            print("  No references found (search may be disabled or timed out)")
+    except Exception as e:
+        print(f"  Reference search error (continuing without): {e}")
+        reference_context = ""
+        references = []
+
+    return {"reference_context": reference_context, "references": references}
+
+
 async def carlos_design_node(state: CarlosState):
     """Carlos drafts the infrastructure"""
     scenario = state.get("scenario")
     priorities = state.get("priorities", {}) or {}
     historical_context = state.get("historical_context", "")
+    reference_context = state.get("reference_context", "")
 
     context_lines = []
 
     # Add historical learning context first (high priority)
     if historical_context:
         context_lines.append(historical_context)
+
+    # Add reference materials from web search
+    if reference_context:
+        context_lines.append(reference_context)
 
     if scenario and scenario != "custom":
         context_lines.append(f"Scenario preset: {scenario} (interpret and adapt as needed).")
@@ -248,12 +287,17 @@ async def ronei_design_node(state: CarlosState):
     scenario = state.get("scenario")
     priorities = state.get("priorities", {}) or {}
     historical_context = state.get("historical_context", "")
+    reference_context = state.get("reference_context", "")
 
     context_lines = []
 
     # Add historical learning context (Ronei will interpret it with his flair)
     if historical_context:
         context_lines.append(historical_context)
+
+    # Add reference materials from web search
+    if reference_context:
+        context_lines.append(reference_context)
 
     if scenario and scenario != "custom":
         context_lines.append(f"Scenario preset: {scenario} (I'll show Carlos how it's really done).")
@@ -596,6 +640,7 @@ builder = StateGraph(CarlosState)
 builder.add_node("requirements_gathering", requirements_gathering_node)
 builder.add_node("refine_requirements", refine_requirements_node)
 builder.add_node("historical_learning", historical_learning_node)
+builder.add_node("reference_search", reference_search_node)
 builder.add_node("design", carlos_design_node)
 builder.add_node("ronei_design", ronei_design_node)
 builder.add_node("security", security_node)
@@ -622,10 +667,11 @@ def check_for_answers(state):
 
 builder.add_conditional_edges("requirements_gathering", check_for_answers)
 
-# After refining requirements, fetch historical context then run Carlos and Ronei in parallel
+# After refining requirements, fetch historical context, search references, then run designs in parallel
 builder.add_edge("refine_requirements", "historical_learning")
-builder.add_edge("historical_learning", "design")
-builder.add_edge("historical_learning", "ronei_design")
+builder.add_edge("historical_learning", "reference_search")
+builder.add_edge("reference_search", "design")
+builder.add_edge("reference_search", "ronei_design")
 
 # All three analysts (Security, Cost, Reliability) run in parallel after both designs complete
 # This runs 3x faster than the previous sequential approach
