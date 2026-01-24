@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3 } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import DeploymentTracker from './components/DeploymentTracker';
+import FeedbackDashboard from './components/FeedbackDashboard';
 import { useAuth } from './contexts/AuthContext';
 
 export default function App() {
@@ -648,6 +649,7 @@ export default function App() {
           <NavItem icon={<MessageCircle size={18}/>} label="Agent Chat" active={currentView === "agents"} onClick={() => setCurrentView("agents")} />
           <NavItem icon={<Layout size={18}/>} label="Help & Agents" active={currentView === "help"} onClick={() => setCurrentView("help")} />
           <NavItem icon={<Cloud size={18}/>} label="Analytics" active={currentView === "analytics"} onClick={() => setCurrentView("analytics")} />
+          <NavItem icon={<BarChart3 size={18}/>} label="Feedback" active={currentView === "feedback"} onClick={() => setCurrentView("feedback")} />
         </nav>
 
         {/* User info and logout */}
@@ -1217,6 +1219,9 @@ export default function App() {
             )}
             {currentView === "analytics" && (
               <AnalyticsView history={history} />
+            )}
+            {currentView === "feedback" && (
+              <FeedbackDashboard />
             )}
           </div>
         </div>
