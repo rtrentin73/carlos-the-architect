@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: carlos-backend
+  namespace: carlos
   labels:
     app: carlos-backend
 spec:
@@ -66,6 +67,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: carlos-backend
+  namespace: carlos
 spec:
   type: LoadBalancer
   selector:
@@ -79,6 +81,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: carlos-backend-hpa
+  namespace: carlos
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
