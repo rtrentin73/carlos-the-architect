@@ -34,6 +34,8 @@ spec:
                   key: azure-openai-api-key
             - name: AZURE_OPENAI_DEPLOYMENT_NAME
               value: "${AZURE_OPENAI_DEPLOYMENT_NAME}"
+            - name: AZURE_OPENAI_MINI_DEPLOYMENT_NAME
+              value: "${AZURE_OPENAI_MINI_DEPLOYMENT_NAME}"
             - name: AZURE_OPENAI_API_VERSION
               value: "${AZURE_OPENAI_API_VERSION}"
             - name: OPENAI_API_VERSION
