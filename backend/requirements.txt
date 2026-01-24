@@ -13,6 +13,4 @@ bcrypt<5.0
 python-multipart
 pypdf
 python-docx
-python-magic-bin
 openpyxl
-markdown
