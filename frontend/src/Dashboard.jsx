@@ -14,6 +14,7 @@ export default function Dashboard() {
   // Requirements clarification state
   const [clarificationNeeded, setClarificationNeeded] = useState(false);
   const [clarificationQuestions, setClarificationQuestions] = useState("");
+  const [streamingQuestions, setStreamingQuestions] = useState(""); // For live streaming of questions
   const [userAnswers, setUserAnswers] = useState("");
   const [originalRequirements, setOriginalRequirements] = useState("");
 
@@ -42,6 +43,7 @@ export default function Dashboard() {
     if (!input.trim() && !providedAnswers) return;
 
     setDesignDoc("");
+    setStreamingQuestions(""); // Reset streaming questions
     if (!providedAnswers) {
       setDebugLog([]);
       setOriginalRequirements(input);
@@ -100,12 +102,15 @@ export default function Dashboard() {
               if (event.type === 'agent_start') {
                 addLog('STATUS', `🤖 ${event.agent} started working...`);
               } else if (event.type === 'token') {
-                // Stream tokens from Carlos or Ronei
+                // Stream tokens from different agents
                 if (event.agent === 'carlos') {
                   carlosDesign += event.content;
                   setDesignDoc(carlosDesign);
                 } else if (event.agent === 'ronei_design') {
                   roneiDesign += event.content;
+                } else if (event.agent === 'requirements_gathering') {
+                  // Stream requirements questions in real-time
+                  setStreamingQuestions(prev => prev + event.content);
                 }
               } else if (event.type === 'field_update') {
                 addLog('DATA', `📊 ${event.field} updated`);
@@ -118,8 +123,11 @@ export default function Dashboard() {
                 // Check if clarification is needed
                 if (summary.clarification_needed) {
                   setClarificationNeeded(true);
-                  setClarificationQuestions(summary.agent_chat);
-                  setDesignDoc(summary.agent_chat);
+                  // Extract just the questions from agent_chat (remove "**Requirements Team:**\n" prefix)
+                  const questionsText = summary.agent_chat.replace(/^\*\*Requirements Team:\*\*\n?/, '').trim();
+                  setClarificationQuestions(questionsText);
+                  setStreamingQuestions(""); // Clear streaming state
+                  setDesignDoc(""); // Clear design doc
                   setStatus("awaiting_answers");
                   addLog('INFO', '❓ Carlos and Ronei need more information');
                 } else {
@@ -135,6 +143,7 @@ export default function Dashboard() {
                     fullDoc += "---\n\n# Terraform Code\n\n" + summary.terraform_code;
                   }
                   setDesignDoc(fullDoc);
+                  setStreamingQuestions(""); // Clear streaming state
                   setClarificationNeeded(false);
                   setStatus("idle");
                 }
@@ -357,6 +366,9 @@ export default function Dashboard() {
                   onSubmit={submitAnswers}
                   loading={status === 'designing'}
                 />
+              ) : streamingQuestions && status === 'designing' ? (
+                // Show streaming questions while Requirements Team is working
+                <StreamingQuestionsView questions={streamingQuestions} />
               ) : designDoc ? (
                 <ReactMarkdown>{designDoc}</ReactMarkdown>
               ) : (
@@ -541,6 +553,30 @@ function EmptyState() {
     <div className="text-center py-32 opacity-20 italic">
       <Cloud size={80} className="mx-auto mb-6 text-slate-400" />
       <p className="text-2xl font-light">Architectural blueprints will stream here...</p>
+    </div>
+  );
+}
+
+// Component to show streaming questions from Requirements Team
+function StreamingQuestionsView({ questions }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg">
+        <div className="flex items-start gap-3">
+          <div className="text-3xl animate-pulse">🤔</div>
+          <div>
+            <h3 className="font-bold text-amber-900 text-xl mb-2">Requirements Team is Analyzing...</h3>
+            <p className="text-amber-700 text-sm">
+              Carlos and Ronei are reviewing your requirements and preparing clarifying questions.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 min-h-[200px]">
+        <ReactMarkdown className="prose prose-slate max-w-none">{questions}</ReactMarkdown>
+        <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1" />
+      </div>
     </div>
   );
 }
