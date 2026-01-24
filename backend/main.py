@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from slowapi.errors import RateLimitExceeded
 from graph import carlos_graph
 from llm_pool import get_pool
+from cache import get_cache, stream_cached_design
 from auth import (
     User,
     UserCreate,
@@ -54,6 +55,11 @@ async def lifespan(app: FastAPI):
         )
     )
     print("🌐 HTTP connection pool initialized")
+
+    # Initialize design cache
+    cache = get_cache(ttl_hours=24)
+    print("📦 Design pattern cache initialized (24h TTL)")
+
     print("✅ Backend ready to serve requests")
 
     yield
@@ -348,8 +354,41 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
     2. Follow-up call with 'user_answers' - completes the design with refined requirements
 
     Rate limited to 10 requests per hour per user.
+    Caches common patterns for instant responses.
     """
     print(f"Received streaming request from {current_user.username}: {req}")
+
+    # Check cache for common patterns (skip if user provided answers - that's a follow-up)
+    cache = get_cache()
+    cache_key = None
+    if not req.get("user_answers"):
+        cache_key = cache.generate_cache_key(
+            req.get("text", ""),
+            {
+                "scenario": req.get("scenario"),
+                "priorities": req.get("priorities", {}),
+            }
+        )
+        cached_design = cache.get(cache_key)
+        if cached_design:
+            print(f"📦 Cache HIT for {current_user.username} (key: {cache_key})")
+
+            async def cached_event_generator():
+                async for event_data in stream_cached_design(cached_design):
+                    yield f"data: {event_data}\n\n"
+
+            return StreamingResponse(
+                cached_event_generator(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",
+                    "X-Cache-Status": "HIT",
+                }
+            )
+        else:
+            print(f"📦 Cache MISS for {current_user.username} (key: {cache_key})")
 
     async def event_generator():
         final_state = {}
@@ -457,28 +496,36 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
             # Check if we're waiting for user answers (clarification phase)
             clarification_needed = final_state.get("clarification_needed", False) and not final_state.get("design_doc")
 
+            summary_data = {
+                "design": final_state.get("design_doc", ""),
+                "ronei_design": final_state.get("ronei_design", ""),
+                "audit_status": final_state.get("audit_status", ""),
+                "audit_report": final_state.get("audit_report", ""),
+                "recommendation": final_state.get("recommendation", ""),
+                "agent_chat": final_state.get("conversation", ""),
+                "security_report": final_state.get("security_report", ""),
+                "cost_report": final_state.get("cost_report", ""),
+                "reliability_report": final_state.get("reliability_report", ""),
+                "terraform_code": final_state.get("terraform_code", ""),
+                "terraform_validation": final_state.get("terraform_validation", ""),
+                "clarification_needed": clarification_needed,
+                # Structured data for programmatic access
+                "structured_data": {
+                    "security": final_state.get("security_data"),
+                    "cost": final_state.get("cost_data"),
+                    "reliability": final_state.get("reliability_data"),
+                },
+            }
+
+            # Cache the result if appropriate (not clarification phase, has design)
+            if cache_key and not clarification_needed and summary_data.get("design"):
+                if cache.should_cache(req.get("text", "")):
+                    cache.set(cache_key, summary_data)
+                    print(f"📦 Cached design for key: {cache_key}")
+
             complete_summary = {
                 "type": "complete",
-                "summary": {
-                    "design": final_state.get("design_doc", ""),
-                    "ronei_design": final_state.get("ronei_design", ""),
-                    "audit_status": final_state.get("audit_status", ""),
-                    "audit_report": final_state.get("audit_report", ""),
-                    "recommendation": final_state.get("recommendation", ""),
-                    "agent_chat": final_state.get("conversation", ""),
-                    "security_report": final_state.get("security_report", ""),
-                    "cost_report": final_state.get("cost_report", ""),
-                    "reliability_report": final_state.get("reliability_report", ""),
-                    "terraform_code": final_state.get("terraform_code", ""),
-                    "terraform_validation": final_state.get("terraform_validation", ""),
-                    "clarification_needed": clarification_needed,
-                    # Structured data for programmatic access
-                    "structured_data": {
-                        "security": final_state.get("security_data"),
-                        "cost": final_state.get("cost_data"),
-                        "reliability": final_state.get("reliability_data"),
-                    },
-                },
+                "summary": summary_data,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             yield f"data: {json.dumps(complete_summary)}\n\n"
@@ -499,5 +546,31 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Cache-Status": "MISS",
         }
     )
+
+
+@app.get("/cache/stats")
+async def get_cache_stats(current_user: User = Depends(get_current_active_user)):
+    """Get cache statistics."""
+    cache = get_cache()
+    stats = cache.get_stats()
+    return {
+        "cache": stats,
+        "status": "enabled",
+        "ttl_hours": cache.ttl_hours,
+    }
+
+
+@app.post("/cache/clear")
+async def clear_cache(current_user: User = Depends(get_current_active_user)):
+    """Clear the design pattern cache. Admin only."""
+    # In production, add admin check here
+    cache = get_cache()
+    old_stats = cache.get_stats()
+    cache.clear()
+    return {
+        "message": "Cache cleared",
+        "cleared_entries": old_stats["entries"],
+    }
