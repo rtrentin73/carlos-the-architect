@@ -19,6 +19,15 @@ from feedback import (
     initialize_feedback_store,
     close_feedback_store,
 )
+from audit import (
+    AuditRecord,
+    AuditAction,
+    AuditSeverity,
+    AuditQueryParams,
+    get_audit_store,
+    initialize_audit_store,
+    close_audit_store,
+)
 from auth import (
     User,
     UserCreate,
@@ -27,11 +36,17 @@ from auth import (
     create_access_token,
     create_user,
     get_current_active_user,
+    require_admin,
+    seed_admin_user,
+    get_all_users,
+    set_user_admin,
+    set_user_disabled,
     ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from document_parser import extract_text_from_path, MAX_FILE_SIZE
 from document_tasks import create_task, get_task, get_user_tasks, TaskStatus
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
+from middleware.audit import AuditMiddleware
 import json
 from datetime import datetime, timezone, timedelta
 import httpx
@@ -68,6 +83,13 @@ async def lifespan(app: FastAPI):
     # Initialize feedback store (Redis if available, otherwise in-memory)
     await initialize_feedback_store()
 
+    # Initialize audit store (Cosmos DB if available, otherwise in-memory)
+    await initialize_audit_store()
+    print("📋 Audit logging initialized")
+
+    # Seed default admin user
+    seed_admin_user()
+
     print("✅ Backend ready to serve requests")
 
     yield
@@ -85,6 +107,9 @@ async def lifespan(app: FastAPI):
 
     # Close feedback store
     await close_feedback_store()
+
+    # Close audit store
+    await close_audit_store()
 
     print("✅ Shutdown complete")
 
@@ -105,6 +130,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add audit logging middleware
+app.add_middleware(AuditMiddleware)
 
 
 @app.get("/health")
@@ -684,3 +712,299 @@ async def get_deployment_analytics(
             status_code=500,
             detail=f"Failed to retrieve analytics: {str(e)}"
         )
+
+
+# ============================================================================
+# Admin Audit Log Endpoints
+# ============================================================================
+
+@app.get("/admin/audit")
+async def query_audit_logs(
+    username: str = None,
+    action: str = None,
+    action_prefix: str = None,
+    severity: str = None,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    endpoint: str = None,
+    limit: int = 100,
+    offset: int = 0,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Query audit logs with filters.
+
+    Admin access required. Supports filtering by:
+    - username: Filter by specific user
+    - action: Exact action type (e.g., "design.request")
+    - action_prefix: Action category prefix (e.g., "auth.")
+    - severity: info, warning, error, critical
+    - start_date/end_date: Time range (ISO format)
+    - endpoint: API endpoint path
+    """
+    try:
+        params = AuditQueryParams(
+            username=username,
+            action=AuditAction(action) if action else None,
+            action_prefix=action_prefix,
+            severity=AuditSeverity(severity) if severity else None,
+            start_date=start_date,
+            end_date=end_date,
+            endpoint=endpoint,
+            limit=min(limit, 1000),
+            offset=offset,
+        )
+
+        store = get_audit_store()
+        records = await store.query(params)
+
+        # Log this admin query
+        await store.log(AuditRecord(
+            username=current_user.username,
+            action=AuditAction.ADMIN_AUDIT_QUERY,
+            severity=AuditSeverity.INFO,
+            endpoint="/admin/audit",
+            method="GET",
+            metadata={"query_params": params.model_dump(exclude_none=True, mode="json")},
+        ))
+
+        return {
+            "records": [r.model_dump(mode="json") for r in records],
+            "count": len(records),
+            "offset": offset,
+            "limit": limit,
+        }
+    except Exception as e:
+        print(f"❌ Error querying audit logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to query audit logs: {str(e)}")
+
+
+@app.get("/admin/audit/export")
+async def export_audit_logs(
+    format: str = "json",
+    username: str = None,
+    action_prefix: str = None,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    limit: int = 10000,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Export audit logs in JSON or CSV format.
+
+    Returns a downloadable file with audit records.
+    """
+    import csv
+    import io
+
+    params = AuditQueryParams(
+        username=username,
+        action_prefix=action_prefix,
+        start_date=start_date,
+        end_date=end_date,
+        limit=min(limit, 10000),
+    )
+
+    store = get_audit_store()
+    records = await store.query(params)
+
+    # Log this export
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_EXPORT,
+        severity=AuditSeverity.INFO,
+        endpoint="/admin/audit/export",
+        method="GET",
+        metadata={"format": format, "record_count": len(records)},
+    ))
+
+    if format.lower() == "csv":
+        output = io.StringIO()
+        if records:
+            fieldnames = list(records[0].model_dump().keys())
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            for record in records:
+                writer.writerow(record.model_dump(mode="json"))
+
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=audit_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            }
+        )
+    else:
+        # JSON format
+        content = json.dumps([r.model_dump(mode="json") for r in records], indent=2, default=str)
+        return StreamingResponse(
+            iter([content]),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=audit_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            }
+        )
+
+
+@app.get("/admin/audit/stats")
+async def get_audit_stats(
+    days: int = 30,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Get aggregate audit statistics for dashboard.
+
+    Returns:
+    - Total events by action category
+    - Events by severity
+    - Unique users
+    - Error count
+    """
+    try:
+        store = get_audit_store()
+        stats = await store.get_stats(days=days)
+
+        return {
+            "stats": stats,
+            "period_days": days,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as e:
+        print(f"❌ Error getting audit stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get audit stats: {str(e)}")
+
+
+# ============================================================================
+# Admin User Management Endpoints
+# ============================================================================
+
+@app.get("/admin/users")
+async def list_users(current_user: User = Depends(require_admin)):
+    """
+    List all registered users.
+
+    Admin access required.
+    """
+    users = get_all_users()
+    return {
+        "users": [u.model_dump() for u in users],
+        "count": len(users),
+    }
+
+
+@app.post("/admin/users/{username}/promote")
+async def promote_user_to_admin(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Promote a user to admin role.
+
+    Admin access required.
+    """
+    user = set_user_admin(username, is_admin=True)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.WARNING,
+        endpoint=f"/admin/users/{username}/promote",
+        method="POST",
+        metadata={"target_user": username, "action": "promote_to_admin"},
+    ))
+
+    return {"message": f"User {username} promoted to admin", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/demote")
+async def demote_user_from_admin(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Remove admin role from a user.
+
+    Admin access required. Cannot demote yourself.
+    """
+    if username == current_user.username:
+        raise HTTPException(status_code=400, detail="Cannot demote yourself")
+
+    user = set_user_admin(username, is_admin=False)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.WARNING,
+        endpoint=f"/admin/users/{username}/demote",
+        method="POST",
+        metadata={"target_user": username, "action": "demote_from_admin"},
+    ))
+
+    return {"message": f"User {username} demoted from admin", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/disable")
+async def disable_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Disable a user account.
+
+    Admin access required. Cannot disable yourself.
+    """
+    if username == current_user.username:
+        raise HTTPException(status_code=400, detail="Cannot disable yourself")
+
+    user = set_user_disabled(username, disabled=True)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.WARNING,
+        endpoint=f"/admin/users/{username}/disable",
+        method="POST",
+        metadata={"target_user": username, "action": "disable_account"},
+    ))
+
+    return {"message": f"User {username} disabled", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/enable")
+async def enable_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Re-enable a disabled user account.
+
+    Admin access required.
+    """
+    user = set_user_disabled(username, disabled=False)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Log admin action
+    store = get_audit_store()
+    await store.log(AuditRecord(
+        username=current_user.username,
+        action=AuditAction.ADMIN_AUDIT_QUERY,
+        severity=AuditSeverity.INFO,
+        endpoint=f"/admin/users/{username}/enable",
+        method="POST",
+        metadata={"target_user": username, "action": "enable_account"},
+    ))
+
+    return {"message": f"User {username} enabled", "user": user.model_dump()}

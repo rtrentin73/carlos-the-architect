@@ -30,7 +30,7 @@ export default function FeedbackDashboard() {
         fetch(`${BACKEND_URL}/feedback/analytics`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch(`${BACKEND_URL}/feedback/`, {
+        fetch(`${BACKEND_URL}/feedback/my-feedback`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
       ]);
