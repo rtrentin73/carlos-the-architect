@@ -36,6 +36,13 @@ export default function App() {
   const [terraformCode, setTerraformCode] = useState("");
   const [agentChat, setAgentChat] = useState("");
   const [currentView, setCurrentView] = useState("blueprint");
+
+  // Requirements clarification state
+  const [clarificationNeeded, setClarificationNeeded] = useState(false);
+  const [clarificationQuestions, setClarificationQuestions] = useState("");
+  const [streamingQuestions, setStreamingQuestions] = useState("");
+  const [userAnswers, setUserAnswers] = useState("");
+  const [originalRequirements, setOriginalRequirements] = useState("");
   const [blueprintTab, setBlueprintTab] = useState("carlos");
   const [history, setHistory] = useState(() => {
     const saved = localStorage.getItem("designHistory");
@@ -115,7 +122,7 @@ export default function App() {
           carlos: { setter: setDesign, name: 'Carlos' },
           ronei_design: { setter: setRoneiDesign, name: 'Ronei' },
           terraform_coder: { setter: setTerraformCode, name: 'Terraform Coder' },
-          requirements_gathering: { setter: setAgentChat, name: 'Requirements Team' },
+          requirements_gathering: { setter: setStreamingQuestions, name: 'Requirements Team' },
           refine_requirements: { setter: setAgentChat, name: 'Requirements Refiner' },
           security: { setter: setSecurityReport, name: 'Security Analyst' },
           cost: { setter: setCostReport, name: 'Cost Specialist' },
@@ -199,6 +206,23 @@ export default function App() {
       case "complete":
         console.log("🎉 Design generation complete!");
         const summary = event.summary;
+
+        // Check if clarification is needed
+        if (summary.clarification_needed) {
+          console.log("❓ Clarification needed from user");
+          setClarificationNeeded(true);
+          // Extract just the questions from agent_chat (remove "**Requirements Team:**\n" prefix)
+          const questionsText = (summary.agent_chat || "").replace(/^\*\*Requirements Team:\*\*\n?/, '').trim();
+          setClarificationQuestions(questionsText);
+          setStreamingQuestions(""); // Clear streaming state
+          setIsDesigning(false);
+          return;
+        }
+
+        // Clear clarification state
+        setClarificationNeeded(false);
+        setClarificationQuestions("");
+        setStreamingQuestions("");
 
         // Save to history
         const newEntry = {
@@ -355,8 +379,16 @@ export default function App() {
     setUploadedFile(null);
   };
 
-  const handleAskCarlos = async () => {
-    // Reset all state
+  const submitAnswers = async () => {
+    if (!userAnswers.trim()) return;
+
+    setClarificationNeeded(false);
+    await handleAskCarlos(userAnswers);
+    setUserAnswers(""); // Clear answers after submission
+  };
+
+  const handleAskCarlos = async (providedAnswers = null) => {
+    // Reset all state (but preserve original requirements if answering clarification)
     setDesign("");
     setRoneiDesign("");
     setSecurityReport("");
@@ -367,6 +399,7 @@ export default function App() {
     setRecommendation("");
     setTerraformCode("");
     setAgentChat("");
+    setStreamingQuestions("");
     setActivityLog([]);
     setAgentStatuses({
       design: 'pending',
@@ -386,8 +419,32 @@ export default function App() {
     });
     setIsDesigning(true);
 
+    // Save original requirements on first call
+    if (!providedAnswers) {
+      setOriginalRequirements(input);
+    }
+
     console.log("=== Starting streaming design request ===");
-    console.log("Input:", input);
+    console.log("Input:", providedAnswers ? originalRequirements : input);
+    if (providedAnswers) {
+      console.log("User answers:", providedAnswers);
+    }
+
+    // Build request body
+    const requestBody = {
+      text: providedAnswers ? originalRequirements : input,
+      scenario,
+      priorities: {
+        cost_performance: costPerformance,
+        compliance: complianceLevel,
+        reliability: reliabilityLevel,
+        strictness: strictnessLevel,
+      },
+    };
+
+    if (providedAnswers) {
+      requestBody.user_answers = providedAnswers;
+    }
 
     try {
       console.log(`Streaming from ${backendBaseUrl}/design-stream`);
@@ -397,16 +454,7 @@ export default function App() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          text: input,
-          scenario,
-          priorities: {
-            cost_performance: costPerformance,
-            compliance: complianceLevel,
-            reliability: reliabilityLevel,
-            strictness: strictnessLevel,
-          },
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       console.log("Response status:", response.status);
@@ -586,6 +634,21 @@ export default function App() {
           <div className="max-w-3xl mx-auto bg-white shadow-xl rounded-2xl p-10 min-h-[80vh] border border-slate-200">
             {currentView === "blueprint" && (
               <>
+                {/* Show clarification form when needed */}
+                {clarificationNeeded ? (
+                  <ClarificationForm
+                    questions={clarificationQuestions}
+                    userAnswers={userAnswers}
+                    setUserAnswers={setUserAnswers}
+                    onSubmit={submitAnswers}
+                    loading={isDesigning}
+                  />
+                ) : streamingQuestions && isDesigning ? (
+                  /* Show streaming questions while Requirements Team is working */
+                  <StreamingQuestionsView questions={streamingQuestions} />
+                ) : (
+                  /* Normal blueprint view */
+                  <>
                 <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">
@@ -754,6 +817,8 @@ export default function App() {
                     <Cloud size={64} className="mb-4 opacity-20"/>
                     <p className="text-xl italic">Waiting for your requirements...</p>
                   </div>
+                )}
+                  </>
                 )}
               </>
             )}
@@ -1064,8 +1129,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Input Bar */}
-        {currentView === "blueprint" && (
+        {/* Input Bar - hide when showing clarification form */}
+        {currentView === "blueprint" && !clarificationNeeded && (
         <div className="p-6 bg-white border-t border-slate-200">
           <div className="max-w-3xl mx-auto">
             {/* File upload confirmation */}
@@ -1435,4 +1500,85 @@ function getAgentVisuals(agent) {
     labelColor: "text-slate-600",
     icon: <MessageCircle size={18} />,
   };
+}
+
+// Component to show streaming questions from Requirements Team
+function StreamingQuestionsView({ questions }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg">
+        <div className="flex items-start gap-3">
+          <div className="text-3xl animate-pulse">🤔</div>
+          <div>
+            <h3 className="font-bold text-amber-900 text-xl mb-2">Requirements Team is Analyzing...</h3>
+            <p className="text-amber-700 text-sm">
+              Carlos and Ronei are reviewing your requirements and preparing clarifying questions.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 min-h-[200px]">
+        <div className="prose prose-slate max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{questions}</ReactMarkdown>
+        </div>
+        <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1" />
+      </div>
+    </div>
+  );
+}
+
+// Clarification Form Component
+function ClarificationForm({ questions, userAnswers, setUserAnswers, onSubmit, loading }) {
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-lg">
+        <div className="flex items-start gap-3">
+          <div className="text-3xl">💬</div>
+          <div>
+            <h3 className="font-bold text-blue-900 text-xl mb-2">Carlos and Ronei Need More Information</h3>
+            <p className="text-blue-700 text-sm">
+              Please answer the questions below to help them create better architecture designs for you.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
+        <div className="prose prose-slate max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{questions}</ReactMarkdown>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-gray-700 mb-3">
+          Your Answers
+        </label>
+        <textarea
+          value={userAnswers}
+          onChange={(e) => setUserAnswers(e.target.value)}
+          placeholder="Please provide answers to the questions above. Be as specific as possible..."
+          className="w-full h-64 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-y"
+          disabled={loading}
+        />
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={onSubmit}
+          disabled={!userAnswers.trim() || loading}
+          className="bg-blue-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="animate-spin" size={18} />
+              Processing...
+            </>
+          ) : (
+            'Submit Answers & Continue'
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
