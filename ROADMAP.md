@@ -6,7 +6,7 @@ Transform Carlos from a specialized cloud architecture design tool into an **ent
 
 ---
 
-## Current State (v1.0)
+## Current State (v1.1)
 
 **Strengths:**
 - ✅ Specialized domain expertise (cloud architecture)
@@ -15,15 +15,17 @@ Transform Carlos from a specialized cloud architecture design tool into an **ent
 - ✅ Real-time streaming UX
 - ✅ Document upload and requirements extraction
 - ✅ Interactive clarification loops
-- ✅ Terraform code generation
+- ✅ Terraform code generation with validation
+- ✅ **Design pattern caching** (Azure Cache for Redis) - instant responses for similar requirements
+- ✅ **Deployment feedback loop** (Azure Cosmos DB) - track deployment outcomes and user satisfaction
+- ✅ **Azure Kubernetes Service (AKS)** deployment with auto-scaling
+- ✅ **GitHub Actions CI/CD** pipeline with Terraform infrastructure-as-code
 
 **Limitations:**
-- ❌ No historical learning or workflow persistence
+- ❌ No historical learning from feedback data (feedback collected but not yet used for improvement)
 - ❌ Fixed orchestration pattern (hard-coded LangGraph DAG)
 - ❌ Limited to architecture design domain
-- ❌ Manual scaling (Kubernetes-based)
 - ❌ No production audit logs or compliance tracking
-- ❌ Stateless (no database)
 
 ---
 

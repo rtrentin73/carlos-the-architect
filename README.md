@@ -25,26 +25,43 @@
    - `security_report`, `cost_report`, `reliability_report`
    - `audit_status`, `audit_report`
    - `agent_chat` (markdown transcript of the agents talking)
+   - `terraform_code` (validated Terraform configuration)
 6. The **frontend renders**:
    - Blueprint markdown (with the Mermaid diagram rendered inline)
    - Security Audits tab (all specialist reports + final verdict)
    - Agent Chat tab (conversation with icons per agent)
    - Analytics tab (scenario popularity, approval rates, recent blockers)
    - History tab (previous designs, persisted in localStorage)
+   - **Deployment Tracker** - collect feedback on deployed designs
+7. **Caching & Persistence**:
+   - **Azure Cache for Redis** caches design patterns for instant responses on similar requirements
+   - **Azure Cosmos DB** stores deployment feedback for analytics and future learning
 
 ---
 
 ## Project Structure
 
 - `backend/`
-  - `main.py` – FastAPI app, `/design` endpoint, CORS setup.
+  - `main.py` – FastAPI app, `/design` endpoint, CORS setup, feedback endpoints.
   - `graph.py` – LangGraph state machine and nodes (Carlos, Security, Cost, Reliability, Auditor).
   - `tasks.py` – Agent instruction prompts.
-  - `requirements.txt` (at project root) – Python dependencies.
+  - `cache.py` – Azure Cache for Redis integration for design pattern caching.
+  - `feedback.py` – Azure Cosmos DB integration for deployment feedback tracking.
+  - `requirements.txt` – Python dependencies.
 - `frontend/`
   - `src/App.jsx` – Main React app, views, and UI logic.
   - `src/components/Splash.jsx` – Initial splash screen.
+  - `src/components/DeploymentTracker.jsx` – Feedback collection for deployed designs.
+  - `src/components/StarRating.jsx` – Interactive star rating component.
   - `vite.config.js`, `package.json` – Vite/React configuration and dependencies.
+- `infra/`
+  - `main.tf` – Terraform configuration for Azure resources (AKS, ACR, Redis, Cosmos DB).
+  - `variables.tf` – Terraform variable definitions.
+  - `outputs.tf` – Terraform outputs for CI/CD.
+- `k8s/`
+  - `backend-deployment.yaml` – Kubernetes deployment for backend.
+  - `frontend-deployment.yaml` – Kubernetes deployment for frontend.
+  - `namespace.yaml` – Kubernetes namespace configuration.
 
 ---
 
@@ -80,11 +97,26 @@ These are read in `backend/graph.py` via `os.getenv`, with `.env` loaded by `pyt
 Create a `.env` file in `backend/` (or project root, depending on how you run it) with values like:
 
 ```bash
+# Azure OpenAI (required)
 AZURE_OPENAI_ENDPOINT="https://your-resource-name.openai.azure.com"
 AZURE_OPENAI_API_KEY="your-key-here"
 AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4o"
 AZURE_OPENAI_API_VERSION="2024-08-01-preview"
+
+# Azure Cache for Redis (optional - enables design caching)
+REDIS_HOST="your-redis.redis.cache.windows.net"
+REDIS_PORT="6380"
+REDIS_PASSWORD="your-redis-key"
+REDIS_SSL="true"
+
+# Azure Cosmos DB (optional - enables deployment feedback tracking)
+COSMOSDB_ENDPOINT="https://your-cosmos.documents.azure.com:443/"
+COSMOSDB_KEY="your-cosmos-key"
+COSMOSDB_DATABASE="carlos-feedback"
+COSMOSDB_CONTAINER="deployments"
 ```
+
+> **Note:** Redis and Cosmos DB are optional for local development. Without them, the app uses in-memory storage (data is lost on restart).
 
 ---
 
@@ -229,6 +261,8 @@ You should see the Carlos AI splash screen, then the main dashboard.
   - FastAPI
   - LangGraph
   - Azure OpenAI (AzureChatOpenAI)
+  - Azure Cache for Redis (design caching)
+  - Azure Cosmos DB (feedback persistence)
 
 - **Frontend**
   - React 18 + Vite
@@ -236,8 +270,26 @@ You should see the Carlos AI splash screen, then the main dashboard.
   - `mermaid` for diagrams
   - `lucide-react` for icons
 
-This README describes the current local development flow. If you plan to deploy Carlos the Architect, you’ll likely want to add:
+- **Infrastructure**
+  - Azure Kubernetes Service (AKS)
+  - Azure Container Registry (ACR)
+  - Terraform (Infrastructure as Code)
+  - GitHub Actions (CI/CD)
 
-- A production ASGI server configuration (e.g., gunicorn + uvicorn workers)
-- A static build/deploy pipeline for the Vite frontend
-- Secure handling of Azure OpenAI credentials (e.g., environment-specific config, key vaults).
+---
+
+## Deployment
+
+Carlos includes production-ready deployment infrastructure:
+
+1. **Terraform** provisions Azure resources (AKS, ACR, Redis, Cosmos DB)
+2. **GitHub Actions** builds Docker images and deploys to AKS on push to `main`
+3. **Kubernetes** manages auto-scaling and health checks
+
+See `.github/workflows/deploy-azure.yml` for the complete CI/CD pipeline.
+
+### Required GitHub Secrets for Deployment
+
+- `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`
+- `AZURE_CREDENTIALS` (service principal JSON)
+- `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`
