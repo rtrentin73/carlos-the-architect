@@ -38,6 +38,10 @@ resource "azurerm_kubernetes_cluster" "main" {
     vm_size             = var.aks_vm_size
     os_disk_size_gb     = 30
     temporary_name_for_rotation = "temppool"
+
+    auto_scaling_enabled = true
+    min_count            = 1
+    max_count            = 5
   }
 
   identity {
