@@ -27,8 +27,15 @@ from auth import (
     create_access_token,
     create_user,
     get_current_active_user,
+    get_or_create_oauth_user,
+    require_admin,
+    seed_admin_user,
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    SECRET_KEY,
 )
+from oauth import oauth, OAUTH_REDIRECT_BASE, is_google_enabled, is_github_enabled
+from starlette.middleware.sessions import SessionMiddleware
+from fastapi.responses import RedirectResponse
 from document_parser import extract_text_from_path, MAX_FILE_SIZE
 from document_tasks import create_task, get_task, get_user_tasks, TaskStatus
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
@@ -68,6 +75,9 @@ async def lifespan(app: FastAPI):
     # Initialize feedback store (Redis if available, otherwise in-memory)
     await initialize_feedback_store()
 
+    # Seed default admin user
+    seed_admin_user()
+
     print("✅ Backend ready to serve requests")
 
     yield
@@ -105,6 +115,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Session middleware for OAuth state management
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 
 @app.get("/health")
@@ -683,4 +696,149 @@ async def get_deployment_analytics(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve analytics: {str(e)}"
+        )
+
+
+# ============================================================================
+# OAuth Authentication Endpoints
+# ============================================================================
+
+@app.get("/auth/providers")
+async def get_auth_providers():
+    """Get available OAuth providers."""
+    return {
+        "providers": {
+            "google": is_google_enabled(),
+            "github": is_github_enabled(),
+        }
+    }
+
+
+@app.get("/auth/google")
+async def google_login(request: Request):
+    """Initiate Google OAuth login."""
+    if not is_google_enabled():
+        raise HTTPException(
+            status_code=501,
+            detail="Google OAuth not configured"
+        )
+
+    redirect_uri = request.url_for("google_callback")
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/google/callback", name="google_callback")
+async def google_callback(request: Request):
+    """Handle Google OAuth callback."""
+    if not is_google_enabled():
+        raise HTTPException(
+            status_code=501,
+            detail="Google OAuth not configured"
+        )
+
+    try:
+        token = await oauth.google.authorize_access_token(request)
+        user_info = token.get("userinfo")
+
+        if not user_info:
+            return RedirectResponse(
+                url=f"{OAUTH_REDIRECT_BASE}/auth/callback?error=no_user_info"
+            )
+
+        # Get or create user
+        user = get_or_create_oauth_user(
+            provider="google",
+            oauth_id=user_info.get("sub"),
+            email=user_info.get("email", ""),
+            name=user_info.get("name", ""),
+            avatar_url=user_info.get("picture"),
+        )
+
+        # Issue JWT token
+        access_token = create_access_token(
+            data={"sub": user.username},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+
+        # Redirect to frontend with token
+        return RedirectResponse(
+            url=f"{OAUTH_REDIRECT_BASE}/auth/callback?token={access_token}"
+        )
+
+    except Exception as e:
+        print(f"❌ Google OAuth error: {e}")
+        return RedirectResponse(
+            url=f"{OAUTH_REDIRECT_BASE}/auth/callback?error=oauth_failed"
+        )
+
+
+@app.get("/auth/github")
+async def github_login(request: Request):
+    """Initiate GitHub OAuth login."""
+    if not is_github_enabled():
+        raise HTTPException(
+            status_code=501,
+            detail="GitHub OAuth not configured"
+        )
+
+    redirect_uri = request.url_for("github_callback")
+    return await oauth.github.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/github/callback", name="github_callback")
+async def github_callback(request: Request):
+    """Handle GitHub OAuth callback."""
+    if not is_github_enabled():
+        raise HTTPException(
+            status_code=501,
+            detail="GitHub OAuth not configured"
+        )
+
+    try:
+        token = await oauth.github.authorize_access_token(request)
+
+        # Fetch user info from GitHub API
+        resp = await oauth.github.get("user", token=token)
+        user_info = resp.json()
+
+        if not user_info:
+            return RedirectResponse(
+                url=f"{OAUTH_REDIRECT_BASE}/auth/callback?error=no_user_info"
+            )
+
+        # Get user's primary email if not public
+        email = user_info.get("email")
+        if not email:
+            # Fetch emails from GitHub API
+            email_resp = await oauth.github.get("user/emails", token=token)
+            emails = email_resp.json()
+            for e in emails:
+                if e.get("primary"):
+                    email = e.get("email")
+                    break
+
+        # Get or create user
+        user = get_or_create_oauth_user(
+            provider="github",
+            oauth_id=str(user_info.get("id")),
+            email=email or "",
+            name=user_info.get("login", ""),
+            avatar_url=user_info.get("avatar_url"),
+        )
+
+        # Issue JWT token
+        access_token = create_access_token(
+            data={"sub": user.username},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+
+        # Redirect to frontend with token
+        return RedirectResponse(
+            url=f"{OAUTH_REDIRECT_BASE}/auth/callback?token={access_token}"
+        )
+
+    except Exception as e:
+        print(f"❌ GitHub OAuth error: {e}")
+        return RedirectResponse(
+            url=f"{OAUTH_REDIRECT_BASE}/auth/callback?error=oauth_failed"
         )

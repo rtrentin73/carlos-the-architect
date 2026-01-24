@@ -6,12 +6,31 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
+  const [oauthError, setOauthError] = useState(null);
 
   const backendBaseUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
   useEffect(() => {
-    // Check if we have a token and validate it
-    if (token) {
+    // Check for OAuth callback parameters in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const oauthToken = urlParams.get('token');
+    const oauthErrorParam = urlParams.get('error');
+
+    if (oauthToken) {
+      // OAuth callback with token - store it and validate
+      localStorage.setItem('token', oauthToken);
+      setToken(oauthToken);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      validateTokenWithValue(oauthToken);
+    } else if (oauthErrorParam) {
+      // OAuth callback with error
+      setOauthError(oauthErrorParam === 'oauth_failed' ? 'OAuth login failed. Please try again.' : oauthErrorParam);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+      setLoading(false);
+    } else if (token) {
+      // Normal token validation
       validateToken();
     } else {
       setLoading(false);
@@ -23,6 +42,28 @@ export function AuthProvider({ children }) {
       const response = await fetch(`${backendBaseUrl}/auth/me`, {
         headers: {
           'Authorization': `Bearer ${token}`
+        }
+      });
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+      } else {
+        // Token invalid, clear it
+        logout();
+      }
+    } catch (error) {
+      console.error('Token validation error:', error);
+      logout();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const validateTokenWithValue = async (tokenValue) => {
+    try {
+      const response = await fetch(`${backendBaseUrl}/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${tokenValue}`
         }
       });
       if (response.ok) {
@@ -100,6 +141,15 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('token');
   };
 
+  const oauthLogin = (provider) => {
+    // Redirect to backend OAuth endpoint
+    window.location.href = `${backendBaseUrl}/auth/${provider}`;
+  };
+
+  const clearOauthError = () => {
+    setOauthError(null);
+  };
+
   const value = {
     user,
     token,
@@ -107,6 +157,9 @@ export function AuthProvider({ children }) {
     login,
     register,
     logout,
+    oauthLogin,
+    oauthError,
+    clearOauthError,
     isAuthenticated: !!user,
   };
 
