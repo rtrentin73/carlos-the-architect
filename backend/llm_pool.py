@@ -10,6 +10,34 @@ from contextlib import asynccontextmanager
 import asyncio
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 import os
+import json
+import urllib.request
+
+
+def get_github_variable(var_name: str) -> Optional[str]:
+    """
+    Fetch a GitHub repository variable if GITHUB_TOKEN and GITHUB_REPOSITORY are set.
+    Used for non-sensitive configuration values.
+    """
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPOSITORY")
+    if not token or not repo:
+        return None
+
+    try:
+        url = f"https://api.github.com/repos/{repo}/actions/variables"
+        req = urllib.request.Request(url)
+        req.add_header("Authorization", f"token {token}")
+        req.add_header("Accept", "application/vnd.github.v3+json")
+
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            for var in data.get("variables", []):
+                if var["name"] == var_name:
+                    return var["value"]
+    except Exception:
+        pass
+    return None
 
 
 def create_llm(temperature: float = 0.7, use_mini: bool = False):
@@ -25,15 +53,19 @@ def create_llm(temperature: float = 0.7, use_mini: bool = False):
 
     # Choose model based on task complexity
     if use_mini:
-        model = os.getenv("AZURE_OPENAI_MINI_DEPLOYMENT_NAME", "gpt-4o-mini")
+        model = os.getenv("AZURE_OPENAI_MINI_DEPLOYMENT_NAME") or get_github_variable("AZURE_OPENAI_MINI_DEPLOYMENT_NAME") or "gpt-4o-mini"
     else:
-        model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o")
+        model = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or get_github_variable("AZURE_OPENAI_DEPLOYMENT_NAME") or "gpt-4o"
 
     if not endpoint or not api_key:
         raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set")
 
+    # For GitHub Models, use GitHub token if available
+    if "models.inference.ai.azure.com" in endpoint:
+        api_key = os.getenv("GITHUB_TOKEN", api_key)
+
     # Azure AI Foundry endpoints contain 'services.ai.azure.com'
-    if "services.ai.azure.com" in endpoint:
+    if "services.ai.azure.com" in endpoint or "models.inference.ai.azure.com" in endpoint:
         # Azure AI Foundry - use OpenAI-compatible client
         base_url = endpoint.rstrip("/")
 
@@ -42,13 +74,14 @@ def create_llm(temperature: float = 0.7, use_mini: bool = False):
             base_url=base_url,
             api_key=api_key,
             temperature=temperature,
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION") or get_github_variable("AZURE_OPENAI_API_VERSION") or "2024-08-01-preview",
             default_headers={"api-key": api_key},
         )
     else:
         # Traditional Azure OpenAI
         return AzureChatOpenAI(
             azure_deployment=model,
-            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION") or get_github_variable("AZURE_OPENAI_API_VERSION") or "2024-08-01-preview",
             azure_endpoint=endpoint,
             api_key=api_key,
             temperature=temperature,
