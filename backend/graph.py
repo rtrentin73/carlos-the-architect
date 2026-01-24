@@ -51,6 +51,13 @@ def create_llm(temperature: float = 0.7):
         if not base_url.endswith("/models"):
             base_url = f"{base_url}/models"
 
+        # Add api-version query parameter for Azure AI Foundry
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
+        if "?" in base_url:
+            base_url = f"{base_url}&api-version={api_version}"
+        else:
+            base_url = f"{base_url}?api-version={api_version}"
+
         return ChatOpenAI(
             model=model,
             base_url=base_url,
