@@ -35,6 +35,10 @@ jobs:
       acr_login_server: ${{ steps.tf-outputs.outputs.acr_login_server }}
       aks_cluster_name: ${{ steps.tf-outputs.outputs.aks_cluster_name }}
       resource_group: ${{ steps.tf-outputs.outputs.resource_group }}
+      redis_hostname: ${{ steps.tf-outputs.outputs.redis_hostname }}
+      redis_key: ${{ steps.tf-outputs.outputs.redis_key }}
+      cosmosdb_endpoint: ${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}
+      cosmosdb_key: ${{ steps.tf-outputs.outputs.cosmosdb_key }}
 
     steps:
       - name: Checkout code
@@ -65,6 +69,10 @@ jobs:
           echo "acr_login_server=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
           echo "aks_cluster_name=$(terraform output -raw aks_cluster_name)" >> $GITHUB_OUTPUT
           echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+          echo "redis_hostname=$(terraform output -raw redis_hostname)" >> $GITHUB_OUTPUT
+          echo "redis_key=$(terraform output -raw redis_primary_access_key)" >> $GITHUB_OUTPUT
+          echo "cosmosdb_endpoint=$(terraform output -raw cosmosdb_endpoint)" >> $GITHUB_OUTPUT
+          echo "cosmosdb_key=$(terraform output -raw cosmosdb_primary_key)" >> $GITHUB_OUTPUT
 
   deploy-backend:
     name: Deploy Backend to AKS
@@ -113,11 +121,15 @@ jobs:
             --docker-password=$ACR_PASSWORD \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          # Create app secrets
+          # Create app secrets (OpenAI, Redis, Cosmos DB)
           kubectl create secret generic carlos-secrets \
             --namespace=carlos \
             --from-literal=azure-openai-endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
             --from-literal=azure-openai-api-key=${{ secrets.AZURE_OPENAI_API_KEY }} \
+            --from-literal=redis-host=${{ needs.terraform.outputs.redis_hostname }} \
+            --from-literal=redis-password=${{ needs.terraform.outputs.redis_key }} \
+            --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \
+            --from-literal=cosmosdb-key=${{ needs.terraform.outputs.cosmosdb_key }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend to AKS
