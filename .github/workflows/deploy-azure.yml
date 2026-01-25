@@ -36,13 +36,11 @@ jobs:
       aks_cluster_name: ${{ steps.tf-outputs.outputs.aks_cluster_name }}
       resource_group: ${{ steps.tf-outputs.outputs.resource_group }}
       redis_hostname: ${{ steps.tf-outputs.outputs.redis_hostname }}
-      redis_key: ${{ steps.azure-secrets.outputs.redis_key }}
-      cosmosdb_endpoint: ${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}
-      cosmosdb_key: ${{ steps.azure-secrets.outputs.cosmosdb_key }}
       redis_port: ${{ steps.tf-outputs.outputs.redis_port }}
-      redis_password: ${{ steps.azure-secrets.outputs.redis_password }}
+      cosmosdb_endpoint: ${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}
       document_intelligence_endpoint: ${{ steps.tf-outputs.outputs.document_intelligence_endpoint }}
-      document_intelligence_key: ${{ steps.azure-secrets.outputs.document_intelligence_key }}
+      # Note: Sensitive values (redis_password, cosmosdb_key, document_intelligence_key)
+      # are fetched directly in deploy-backend job to avoid cross-job secret masking issues
 
     steps:
       - name: Checkout code
@@ -78,65 +76,6 @@ jobs:
           echo "redis_port=$(terraform output -raw redis_port)" >> $GITHUB_OUTPUT
           echo "cosmosdb_endpoint=$(terraform output -raw cosmosdb_endpoint)" >> $GITHUB_OUTPUT
           echo "document_intelligence_endpoint=$(terraform output -raw document_intelligence_endpoint)" >> $GITHUB_OUTPUT
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Get Sensitive Values
-        id: azure-secrets
-        run: |
-          # Use GitHub secrets if available, otherwise fetch from Azure CLI
-          REDIS_KEY="${{ secrets.REDIS_PASSWORD }}"
-          COSMOSDB_KEY="${{ secrets.COSMOSDB_KEY }}"
-          DOCINT_KEY="${{ secrets.DOCUMENT_INTELLIGENCE_KEY }}"
-
-          RESOURCE_GROUP="${{ steps.tf-outputs.outputs.resource_group }}"
-
-          # Fallback to Azure CLI if GitHub secrets are empty
-          if [ -z "$REDIS_KEY" ]; then
-            echo "Fetching Redis key from Azure..."
-            REDIS_NAME=$(echo "${{ steps.tf-outputs.outputs.redis_hostname }}" | cut -d'.' -f1)
-            REDIS_KEY=$(az redis list-keys --resource-group "$RESOURCE_GROUP" --name "$REDIS_NAME" --query primaryKey -o tsv)
-          fi
-
-          if [ -z "$COSMOSDB_KEY" ]; then
-            echo "Fetching Cosmos DB key from Azure..."
-            COSMOS_NAME=$(echo "${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}" | sed 's|https://||' | cut -d'.' -f1)
-            COSMOSDB_KEY=$(az cosmosdb keys list --resource-group "$RESOURCE_GROUP" --name "$COSMOS_NAME" --query primaryMasterKey -o tsv)
-          fi
-
-          if [ -z "$DOCINT_KEY" ]; then
-            echo "Fetching Document Intelligence key from Azure..."
-            DOCINT_ENDPOINT="${{ steps.tf-outputs.outputs.document_intelligence_endpoint }}"
-            if [ -n "$DOCINT_ENDPOINT" ] && [ "$DOCINT_ENDPOINT" != "null" ]; then
-              DOCINT_NAME=$(echo "$DOCINT_ENDPOINT" | sed 's|https://||' | cut -d'.' -f1)
-              DOCINT_KEY=$(az cognitiveservices account keys list --resource-group "$RESOURCE_GROUP" --name "$DOCINT_NAME" --query key1 -o tsv 2>/dev/null || echo "")
-            fi
-          fi
-
-          # Validate required secrets
-          if [ -z "$REDIS_KEY" ]; then
-            echo "ERROR: Redis key not found in secrets or Azure"
-            exit 1
-          fi
-          if [ -z "$COSMOSDB_KEY" ]; then
-            echo "ERROR: Cosmos DB key not found in secrets or Azure"
-            exit 1
-          fi
-
-          # Mask and output
-          echo "::add-mask::$REDIS_KEY"
-          echo "::add-mask::$COSMOSDB_KEY"
-          if [ -n "$DOCINT_KEY" ]; then
-            echo "::add-mask::$DOCINT_KEY"
-          fi
-
-          echo "redis_key=$REDIS_KEY" >> $GITHUB_OUTPUT
-          echo "redis_password=$REDIS_KEY" >> $GITHUB_OUTPUT
-          echo "cosmosdb_key=$COSMOSDB_KEY" >> $GITHUB_OUTPUT
-          echo "document_intelligence_key=$DOCINT_KEY" >> $GITHUB_OUTPUT
 
   deploy-backend:
     name: Deploy Backend to AKS
@@ -185,7 +124,39 @@ jobs:
             --docker-password=$ACR_PASSWORD \
             --dry-run=client -o yaml | kubectl apply -f -
 
-          # Create app secrets (including Redis and Document Intelligence credentials from Terraform outputs)
+          # Fetch sensitive secrets directly from Azure (avoids cross-job masking issues)
+          RESOURCE_GROUP="${{ needs.terraform.outputs.resource_group }}"
+
+          echo "Fetching Redis key from Azure..."
+          REDIS_NAME=$(echo "${{ needs.terraform.outputs.redis_hostname }}" | cut -d'.' -f1)
+          REDIS_PASSWORD=$(az redis list-keys --resource-group "$RESOURCE_GROUP" --name "$REDIS_NAME" --query primaryKey -o tsv)
+
+          echo "Fetching Cosmos DB key from Azure..."
+          COSMOS_NAME=$(echo "${{ needs.terraform.outputs.cosmosdb_endpoint }}" | sed 's|https://||' | cut -d'.' -f1)
+          COSMOSDB_KEY=$(az cosmosdb keys list --resource-group "$RESOURCE_GROUP" --name "$COSMOS_NAME" --query primaryMasterKey -o tsv)
+
+          # Fetch Document Intelligence key (optional)
+          DOCINT_ENDPOINT="${{ needs.terraform.outputs.document_intelligence_endpoint }}"
+          DOCINT_KEY=""
+          if [ -n "$DOCINT_ENDPOINT" ] && [ "$DOCINT_ENDPOINT" != "null" ]; then
+            echo "Fetching Document Intelligence key from Azure..."
+            DOCINT_NAME=$(echo "$DOCINT_ENDPOINT" | sed 's|https://||' | cut -d'.' -f1)
+            DOCINT_KEY=$(az cognitiveservices account keys list --resource-group "$RESOURCE_GROUP" --name "$DOCINT_NAME" --query key1 -o tsv 2>/dev/null || echo "")
+          fi
+
+          # Validate required secrets
+          if [ -z "$REDIS_PASSWORD" ]; then
+            echo "ERROR: Failed to fetch Redis key from Azure"
+            exit 1
+          fi
+          if [ -z "$COSMOSDB_KEY" ]; then
+            echo "ERROR: Failed to fetch Cosmos DB key from Azure"
+            exit 1
+          fi
+
+          echo "✅ Successfully fetched all secrets from Azure"
+
+          # Create app secrets with freshly fetched values
           kubectl create secret generic carlos-secrets \
             --namespace=carlos \
             --from-literal=azure-openai-endpoint=${{ secrets.AZURE_OPENAI_ENDPOINT }} \
@@ -193,11 +164,11 @@ jobs:
             --from-literal=tavily-api-key=${{ secrets.TAVILY_API_KEY }} \
             --from-literal=redis-host=${{ needs.terraform.outputs.redis_hostname }} \
             --from-literal=redis-port=${{ needs.terraform.outputs.redis_port }} \
-            --from-literal=redis-password=${{ needs.terraform.outputs.redis_password }} \
+            --from-literal=redis-password="$REDIS_PASSWORD" \
             --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \
-            --from-literal=cosmosdb-key=${{ needs.terraform.outputs.cosmosdb_key }} \
+            --from-literal=cosmosdb-key="$COSMOSDB_KEY" \
             --from-literal=azure-document-intelligence-endpoint=${{ needs.terraform.outputs.document_intelligence_endpoint }} \
-            --from-literal=azure-document-intelligence-key=${{ needs.terraform.outputs.document_intelligence_key }} \
+            --from-literal=azure-document-intelligence-key="$DOCINT_KEY" \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend to AKS
