@@ -638,16 +638,25 @@ async def terraform_validator_node(state: CarlosState):
     convo = state.get("conversation", "")
     convo += "**Terraform Validator:**\n" + validation_report + "\n\n"
 
+    # Debug: Print first 500 chars of validation report to see what LLM returned
+    print(f"\n{'='*60}")
+    print(f"  📝 TERRAFORM VALIDATOR OUTPUT (first 500 chars):")
+    print(f"{'='*60}")
+    print(validation_report[:500])
+    print(f"{'='*60}\n")
+
     # Parse validation status from the report
     # Look for explicit "Status:" line first, then fall back to keyword detection
     validation_status = "PASS"
     upper_report = validation_report.upper()
 
     # Primary detection: Look for "Status: NEEDS FIXES" or similar patterns
+    # Handle various markdown formats like **Status:** NEEDS FIXES or **Status: NEEDS FIXES**
     import re
-    status_match = re.search(r'STATUS[:\s]+\**(NEEDS\s*FIXES|PASS\s*WITH\s*WARNINGS|PASS)\**', upper_report)
+    status_match = re.search(r'STATUS[:\s*]+\s*(NEEDS\s*FIX(?:ES)?|PASS\s*WITH\s*WARNINGS?|PASS)(?:\s*\**)?', upper_report)
     if status_match:
         status_text = status_match.group(1).strip()
+        print(f"  📋 Status regex matched: '{status_text}'")
         if "NEEDS" in status_text and "FIX" in status_text:
             validation_status = "NEEDS_FIXES"
         elif "WARNING" in status_text:
@@ -655,8 +664,9 @@ async def terraform_validator_node(state: CarlosState):
         else:
             validation_status = "PASS"
     else:
+        print(f"  ⚠️ Status regex did not match, using fallback detection")
         # Fallback: Look for keywords anywhere in the report
-        if "NEEDS FIXES" in upper_report or "NEEDS_FIXES" in upper_report or "NEED TO FIX" in upper_report:
+        if "NEEDS FIXES" in upper_report or "NEEDS_FIXES" in upper_report or "NEEDS FIX" in upper_report or "NEED TO FIX" in upper_report:
             validation_status = "NEEDS_FIXES"
         elif "PASS WITH WARNINGS" in upper_report or "PASS_WITH_WARNINGS" in upper_report:
             validation_status = "PASS_WITH_WARNINGS"
