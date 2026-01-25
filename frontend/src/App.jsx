@@ -1472,7 +1472,7 @@ export default function App() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xls"
+                accept=".pdf,.docx,.doc,.txt,.md,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.tif,.webp"
                 onChange={handleFileUpload}
                 className="hidden"
               />
@@ -1482,7 +1482,7 @@ export default function App() {
                 onClick={handleFileButtonClick}
                 disabled={isDesigning || uploading}
                 className="p-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed border border-slate-200"
-                title="Upload requirements document (PDF, DOCX, TXT, MD, XLSX - max 50MB)"
+                title="Upload requirements document or image (PDF, DOCX, TXT, MD, XLSX, PNG, JPG - max 50MB)"
               >
                 {uploading ? (
                   <Loader2 className="animate-spin" size={20} />

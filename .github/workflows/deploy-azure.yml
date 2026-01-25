@@ -137,6 +137,8 @@ jobs:
             --from-literal=redis-password=${{ needs.terraform.outputs.redis_password }} \
             --from-literal=cosmosdb-endpoint=${{ needs.terraform.outputs.cosmosdb_endpoint }} \
             --from-literal=cosmosdb-key=${{ needs.terraform.outputs.cosmosdb_key }} \
+            --from-literal=azure-document-intelligence-endpoint=${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT }} \
+            --from-literal=azure-document-intelligence-key=${{ secrets.AZURE_DOCUMENT_INTELLIGENCE_KEY }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend to AKS
