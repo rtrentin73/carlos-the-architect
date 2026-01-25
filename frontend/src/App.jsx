@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import DeploymentTracker from './components/DeploymentTracker';
@@ -1511,6 +1511,32 @@ function AnalyticsView({ history }) {
 
 function AgentChatView({ transcript }) {
   const messages = parseAgentTranscript(transcript);
+  const [expandedMessages, setExpandedMessages] = useState({});
+
+  const toggleExpand = (idx) => {
+    setExpandedMessages(prev => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }));
+  };
+
+  // Get preview text (first ~150 chars or 3 lines, whichever is shorter)
+  const getPreview = (content) => {
+    const lines = content.split('\n').slice(0, 3);
+    const preview = lines.join('\n');
+    if (preview.length > 150) {
+      return preview.substring(0, 150) + '...';
+    }
+    if (content.length > preview.length) {
+      return preview + '...';
+    }
+    return content;
+  };
+
+  // Check if content needs expansion (more than 150 chars or more than 3 lines)
+  const needsExpansion = (content) => {
+    return content.length > 150 || content.split('\n').length > 3;
+  };
 
   if (!messages.length) {
     return (
@@ -1521,20 +1547,47 @@ function AgentChatView({ transcript }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {messages.map((msg, idx) => {
         const { iconBg, labelColor, icon } = getAgentVisuals(msg.agent);
+        const isExpanded = expandedMessages[idx];
+        const canExpand = needsExpansion(msg.content);
+        const displayContent = isExpanded || !canExpand ? msg.content : getPreview(msg.content);
+
         return (
-          <div key={idx} className="flex items-start gap-3">
-            <div className={`h-10 w-10 rounded-full flex items-center justify-center ${iconBg}`}>
+          <div
+            key={idx}
+            className={`flex items-start gap-3 p-3 rounded-lg transition-all ${
+              canExpand ? 'cursor-pointer hover:bg-slate-50' : ''
+            } ${isExpanded ? 'bg-slate-50 border border-slate-200' : ''}`}
+            onClick={() => canExpand && toggleExpand(idx)}
+          >
+            <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${iconBg}`}>
               <span className="text-slate-800">{icon}</span>
             </div>
-            <div className="flex-1">
-              <div className={`text-xs font-semibold uppercase tracking-wide mb-1 ${labelColor}`}>
-                {msg.agent}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <div className={`text-xs font-semibold uppercase tracking-wide ${labelColor}`}>
+                  {msg.agent}
+                </div>
+                {canExpand && (
+                  <div className={`flex items-center gap-1 text-xs ${labelColor}`}>
+                    {isExpanded ? (
+                      <>
+                        <span className="text-slate-500">Click to collapse</span>
+                        <ChevronUp size={14} />
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-slate-500">Click to expand</span>
+                        <ChevronDown size={14} />
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="prose prose-slate max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+              <div className={`prose prose-slate max-w-none ${!isExpanded && canExpand ? 'line-clamp-3' : ''}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
               </div>
             </div>
           </div>
@@ -1561,7 +1614,8 @@ function parseAgentTranscript(text) {
     buffer = [];
   };
 
-  const headerRegex = /^\*\*(Carlos|Security Analyst|Cost Specialist|SRE|Chief Auditor):\*\*\s*$/;
+  // Extended regex to match all agent headers
+  const headerRegex = /^\*\*(Carlos|Security Analyst|Cost Specialist|SRE|Chief Auditor|Ronei|Requirements Team|Design Recommender|Terraform Coder|Terraform Validator|Terraform Corrector):\*\*\s*$/i;
 
   for (const line of lines) {
     const match = line.match(headerRegex);
@@ -1625,6 +1679,51 @@ function getAgentVisuals(agent) {
       iconBg: "bg-slate-100",
       labelColor: "text-slate-700",
       icon: <MessageCircle size={18} />,
+    };
+  }
+
+  // Ronei - Product Manager / Requirements Analyst
+  if (name === "ronei" || name.includes("requirements team")) {
+    return {
+      iconBg: "bg-indigo-100",
+      labelColor: "text-indigo-700",
+      icon: <User size={18} />,
+    };
+  }
+
+  // Design Recommender
+  if (name.includes("design recommender")) {
+    return {
+      iconBg: "bg-cyan-100",
+      labelColor: "text-cyan-700",
+      icon: <BarChart3 size={18} />,
+    };
+  }
+
+  // Terraform Coder
+  if (name.includes("terraform coder")) {
+    return {
+      iconBg: "bg-violet-100",
+      labelColor: "text-violet-700",
+      icon: <Code size={18} />,
+    };
+  }
+
+  // Terraform Validator
+  if (name.includes("terraform validator")) {
+    return {
+      iconBg: "bg-teal-100",
+      labelColor: "text-teal-700",
+      icon: <Shield size={18} />,
+    };
+  }
+
+  // Terraform Corrector
+  if (name.includes("terraform corrector")) {
+    return {
+      iconBg: "bg-orange-100",
+      labelColor: "text-orange-700",
+      icon: <FileCode size={18} />,
     };
   }
 
