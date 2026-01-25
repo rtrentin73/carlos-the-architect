@@ -181,3 +181,15 @@ resource "azurerm_cosmosdb_sql_container" "design_history" {
     }
   }
 }
+
+# Azure AI Document Intelligence (Form Recognizer) for OCR
+resource "azurerm_cognitive_account" "document_intelligence" {
+  name                = "${local.resource_prefix}-docint"
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  kind                = "FormRecognizer"
+  sku_name            = "S0"
+  tags                = local.tags
+
+  custom_subdomain_name = "${local.resource_prefix}-docint"
+}

@@ -62,3 +62,14 @@ output "cosmosdb_database_name" {
   description = "Azure Cosmos DB database name"
   value       = azurerm_cosmosdb_sql_database.feedback.name
 }
+
+output "document_intelligence_endpoint" {
+  description = "Azure AI Document Intelligence endpoint"
+  value       = azurerm_cognitive_account.document_intelligence.endpoint
+}
+
+output "document_intelligence_key" {
+  description = "Azure AI Document Intelligence primary key"
+  value       = azurerm_cognitive_account.document_intelligence.primary_access_key
+  sensitive   = true
+}
