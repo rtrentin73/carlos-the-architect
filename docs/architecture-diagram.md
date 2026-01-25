@@ -46,6 +46,7 @@ flowchart TB
     subgraph AzureServices["Azure Data Services"]
         Redis["Azure Cache for Redis<br/>(Design Caching)"]
         CosmosDB["Azure Cosmos DB<br/>(Feedback Storage)"]
+        DocIntel["Azure AI Document Intelligence<br/>(OCR for Images/PDFs)"]
     end
 
     subgraph Storage["Client Storage"]
@@ -90,6 +91,7 @@ flowchart TB
 
     API -.->|Cache Check/Store| Redis
     API -.->|Save Feedback| CosmosDB
+    API -.->|OCR Processing| DocIntel
     UI -->|Submit Feedback| API
 
     style Carlos fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
@@ -99,6 +101,7 @@ flowchart TB
     style Decision fill:#fff9c4,stroke:#f9a825,stroke-width:2px
     style Redis fill:#dc382d,stroke:#a41e11,color:#fff
     style CosmosDB fill:#0078d4,stroke:#005a9e,color:#fff
+    style DocIntel fill:#68217a,stroke:#4a1754,color:#fff
 ```
 
 ## Detailed Data Flow
@@ -251,6 +254,7 @@ sequenceDiagram
 ### Data Services
 - Azure Cache for Redis (design pattern caching)
 - Azure Cosmos DB (serverless, feedback persistence)
+- Azure AI Document Intelligence (OCR for images and scanned PDFs)
 
 ## Environment Configuration
 
@@ -273,6 +277,10 @@ COSMOSDB_ENDPOINT="https://your-cosmos.documents.azure.com:443/"
 COSMOSDB_KEY="your-cosmos-key"
 COSMOSDB_DATABASE="carlos-feedback"
 COSMOSDB_CONTAINER="deployments"
+
+# Azure AI Document Intelligence (optional - enables OCR)
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT="https://your-docint.cognitiveservices.azure.com/"
+AZURE_DOCUMENT_INTELLIGENCE_KEY="your-document-intelligence-key"
 ```
 
 ## Deployment Architecture
@@ -299,6 +307,7 @@ flowchart LR
         subgraph DataServices["Data Services"]
             Redis[Azure Cache for Redis<br/>Design Caching]
             CosmosDB[Azure Cosmos DB<br/>Feedback Storage]
+            DocIntel[Azure AI Document Intelligence<br/>OCR Processing]
         end
 
         subgraph External["External Services"]
@@ -318,16 +327,18 @@ flowchart LR
     Backend1 & Backend2 & BackendN --> AzureAI
     Backend1 & Backend2 & BackendN --> Redis
     Backend1 & Backend2 & BackendN --> CosmosDB
+    Backend1 & Backend2 & BackendN -.->|OCR| DocIntel
     HPA -.->|Scale| Backend1 & Backend2 & BackendN
 
     GitHub -->|Deploy| AKS
     GitHub -->|Push Images| ACR
-    Terraform -->|Provision| AKS & Redis & CosmosDB & ACR
+    Terraform -->|Provision| AKS & Redis & CosmosDB & ACR & DocIntel
 
     style AzureAI fill:#0078d4,stroke:#005a9e,color:#fff
     style Redis fill:#dc382d,stroke:#a41e11,color:#fff
     style CosmosDB fill:#0078d4,stroke:#005a9e,color:#fff
     style ACR fill:#0078d4,stroke:#005a9e,color:#fff
+    style DocIntel fill:#68217a,stroke:#4a1754,color:#fff
 ```
 
 ## Future Enhancements
@@ -338,6 +349,7 @@ flowchart LR
 - [x] Export to Terraform/CloudFormation
 - [x] Design caching (Azure Cache for Redis)
 - [x] Deployment feedback tracking
+- [x] Document OCR (Azure AI Document Intelligence)
 - [ ] Cost estimation integration
 - [ ] Diagram versioning and comparison
 - [ ] Integration with CI/CD pipelines

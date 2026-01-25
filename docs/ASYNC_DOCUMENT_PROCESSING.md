@@ -25,6 +25,8 @@ This implementation adds asynchronous document processing to Carlos the Architec
 2. **Document Parser** ([backend/document_parser.py](document_parser.py))
    - `extract_text_from_path()` - New function for file path processing
    - Supports PDF, DOCX, XLSX, TXT, MD (up to 50MB)
+   - **Image OCR** - Supports PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP via Azure AI Document Intelligence
+   - **Scanned PDF OCR** - Falls back to Document Intelligence for scanned PDFs when text extraction fails
 
 3. **API Endpoints** ([backend/main.py](main.py))
    - `POST /upload-document` - Start async processing
@@ -213,6 +215,20 @@ from document_tasks import cleanup_old_tasks
 # Clean tasks older than 24 hours
 deleted_count = cleanup_old_tasks(max_age_hours=24)
 ```
+
+### Azure AI Document Intelligence (OCR)
+
+For image and scanned PDF support, configure Document Intelligence:
+
+```bash
+# Local development (.env file)
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT="https://your-docint.cognitiveservices.azure.com/"
+AZURE_DOCUMENT_INTELLIGENCE_KEY="your-key"
+```
+
+**Production deployment:** Document Intelligence is automatically provisioned via Terraform (`infra/main.tf`) and credentials are injected into Kubernetes secrets during CI/CD deployment.
+
+Supported image formats: PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP
 
 ## Testing
 
