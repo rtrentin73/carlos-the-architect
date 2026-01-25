@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode, Trash2 } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import DeploymentTracker from './components/DeploymentTracker';
@@ -350,6 +350,16 @@ export default function App() {
         }]);
         setIsDesigning(false);
         break;
+    }
+  };
+
+  // Delete design from history
+  const deleteFromHistory = (entryId, e) => {
+    e.stopPropagation(); // Prevent triggering the parent onClick
+    if (window.confirm('Are you sure you want to delete this design from history?')) {
+      const updatedHistory = history.filter(entry => entry.id !== entryId);
+      setHistory(updatedHistory);
+      localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
     }
   };
 
@@ -1132,11 +1142,20 @@ export default function App() {
                               )}
                             </div>
                           </div>
-                          {entry.auditStatus && (
-                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${entry.auditStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                              {entry.auditStatus.toUpperCase()}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2 ml-4">
+                            {entry.auditStatus && (
+                              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${entry.auditStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                {entry.auditStatus.toUpperCase()}
+                              </span>
+                            )}
+                            <button
+                              onClick={(e) => deleteFromHistory(entry.id, e)}
+                              className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition"
+                              title="Delete from history"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
