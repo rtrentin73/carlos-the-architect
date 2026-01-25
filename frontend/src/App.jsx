@@ -41,6 +41,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [isCacheHit, setIsCacheHit] = useState(false);
   const [agentChat, setAgentChat] = useState("");
+  const [lastAgentInChat, setLastAgentInChat] = useState(null); // Track which agent was last added to chat
   const [references, setReferences] = useState([]);
   const [currentView, setCurrentView] = useState("blueprint");
   const [currentDesignId, setCurrentDesignId] = useState(null);
@@ -122,6 +123,27 @@ export default function App() {
           timestamp: event.timestamp || new Date().toISOString()
         }]);
         setAgentStatuses(prev => ({ ...prev, [event.agent]: 'active' }));
+
+        // Add agent header to agentChat for agents that contribute to conversation
+        const agentChatHeaders = {
+          carlos: '**Carlos:**\n',
+          ronei_design: '**Ronei:**\n',
+          security: '**Security Analyst:**\n',
+          cost: '**Cost Specialist:**\n',
+          reliability: '**SRE:**\n',
+          audit: '**Chief Auditor:**\n',
+          recommender: '**Design Recommender:**\n',
+          terraform_coder: '**Terraform Coder:**\n',
+          terraform_validator: '**Terraform Validator:**\n',
+          terraform_corrector: '**Terraform Coder (Correction):**\n',
+          requirements_gathering: '**Requirements Team:**\n',
+          refine_requirements: '**Refined Requirements:**\n',
+        };
+
+        if (agentChatHeaders[event.agent]) {
+          setAgentChat(prev => prev + agentChatHeaders[event.agent]);
+          setLastAgentInChat(event.agent);
+        }
         break;
 
       case "agent_complete":
@@ -134,6 +156,16 @@ export default function App() {
           timestamp: event.timestamp || new Date().toISOString()
         }]);
         setAgentStatuses(prev => ({ ...prev, [event.agent]: 'completed' }));
+
+        // Add trailing newline to agentChat when agent completes
+        const chatAgents = [
+          'carlos', 'ronei_design', 'security', 'cost', 'reliability', 'audit',
+          'recommender', 'terraform_coder', 'terraform_validator', 'terraform_corrector',
+          'requirements_gathering', 'refine_requirements'
+        ];
+        if (chatAgents.includes(event.agent)) {
+          setAgentChat(prev => prev + '\n\n');
+        }
         break;
 
       case "token":
@@ -143,8 +175,9 @@ export default function App() {
           ronei_design: { setter: setRoneiDesign, name: 'Ronei' },
           terraform_coder: { setter: setTerraformCode, name: 'Terraform Coder' },
           terraform_validator: { setter: setTerraformValidation, name: 'Terraform Validator' },
+          terraform_corrector: { setter: setTerraformCode, name: 'Terraform Corrector' },
           requirements_gathering: { setter: setStreamingQuestions, name: 'Requirements Team' },
-          refine_requirements: { setter: setAgentChat, name: 'Requirements Refiner' },
+          refine_requirements: { setter: null, name: 'Requirements Refiner' }, // Only streams to agentChat
           security: { setter: setSecurityReport, name: 'Security Analyst' },
           cost: { setter: setCostReport, name: 'Cost Specialist' },
           reliability: { setter: setReliabilityReport, name: 'SRE' },
@@ -152,10 +185,24 @@ export default function App() {
           recommender: { setter: setRecommendation, name: 'Design Recommender' }
         };
 
+        // Agents that contribute to the agent chat conversation
+        const agentChatAgents = [
+          'carlos', 'ronei_design', 'security', 'cost', 'reliability', 'audit',
+          'recommender', 'terraform_coder', 'terraform_validator', 'terraform_corrector',
+          'requirements_gathering', 'refine_requirements'
+        ];
+
         const config = agentStreamConfig[event.agent];
         if (config) {
-          // Update content
-          config.setter(prev => prev + event.content);
+          // Update the agent's specific content state
+          if (config.setter) {
+            config.setter(prev => prev + event.content);
+          }
+
+          // Also append to agentChat for conversation view
+          if (agentChatAgents.includes(event.agent)) {
+            setAgentChat(prev => prev + event.content);
+          }
 
           // Update token count and add activity log entry every 50 tokens
           setTokenCounts(prev => {
@@ -438,6 +485,7 @@ export default function App() {
     setTerraformCode("");
     setTerraformValidation("");
     setAgentChat("");
+    setLastAgentInChat(null);
     setReferences([]);
     setStreamingQuestions("");
     setActivityLog([]);
@@ -1397,7 +1445,58 @@ function MermaidDiagram({ definition }) {
 
     const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
 
-    mermaid.initialize({ startOnLoad: false });
+    // Professional Mermaid theme configuration
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        // Primary colors - modern blue palette
+        primaryColor: '#3b82f6',
+        primaryTextColor: '#ffffff',
+        primaryBorderColor: '#2563eb',
+        // Secondary colors
+        secondaryColor: '#e0e7ff',
+        secondaryTextColor: '#1e40af',
+        secondaryBorderColor: '#6366f1',
+        // Tertiary colors
+        tertiaryColor: '#f0fdf4',
+        tertiaryTextColor: '#166534',
+        tertiaryBorderColor: '#22c55e',
+        // Background and lines
+        background: '#ffffff',
+        mainBkg: '#f8fafc',
+        lineColor: '#64748b',
+        // Node colors
+        nodeBorder: '#334155',
+        clusterBkg: '#f1f5f9',
+        clusterBorder: '#cbd5e1',
+        // Text
+        titleColor: '#0f172a',
+        textColor: '#334155',
+        // Flowchart specific
+        edgeLabelBackground: '#ffffff',
+        // Fonts
+        fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      },
+      flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        padding: 20,
+        nodeSpacing: 50,
+        rankSpacing: 70,
+        useMaxWidth: true,
+      },
+      sequence: {
+        diagramMarginX: 20,
+        diagramMarginY: 20,
+        actorMargin: 80,
+        boxMargin: 10,
+        boxTextMargin: 10,
+        noteMargin: 15,
+        messageMargin: 45,
+        useMaxWidth: true,
+      },
+    });
 
     mermaid
       .render(id, definition)
@@ -1421,7 +1520,17 @@ function MermaidDiagram({ definition }) {
       });
   }, [definition]);
 
-  return <div ref={containerRef} className="overflow-x-auto" />;
+  return (
+    <div className="bg-gradient-to-br from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+          <Layout size={18} className="text-blue-600" />
+        </div>
+        <h3 className="font-semibold text-slate-700">Architecture Diagram</h3>
+      </div>
+      <div ref={containerRef} className="overflow-x-auto bg-white rounded-lg p-4 border border-slate-100" />
+    </div>
+  );
 }
 
 function AnalyticsView({ history }) {
