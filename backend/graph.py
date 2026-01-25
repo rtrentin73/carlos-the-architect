@@ -14,6 +14,7 @@ from tasks import (
     DESIGN_RECOMMENDER_INSTRUCTIONS,
     TERRAFORM_CODER_INSTRUCTIONS,
     TERRAFORM_VALIDATOR_INSTRUCTIONS,
+    TERRAFORM_CODER_CORRECTOR_INSTRUCTIONS,
 )
 from llm_pool import get_pool
 from schemas import (
@@ -47,6 +48,10 @@ class CarlosState(TypedDict):
     terraform_tokens: list  # Token chunks from Terraform Coder for streaming
     terraform_validation: str  # Validation report from Terraform Validator
     terraform_validator_tokens: list  # Token chunks from Terraform Validator for streaming
+    # Terraform feedback loop fields
+    terraform_correction_iteration: int  # Track correction attempts (max 2-3)
+    terraform_validation_status: str  # PASS, PASS_WITH_WARNINGS, or NEEDS_FIXES
+    terraform_corrector_tokens: list  # Token chunks from Terraform Corrector for streaming
     # Token fields for all streaming agents
     requirements_tokens: list  # Token chunks from Requirements Gathering
     refine_tokens: list  # Token chunks from Refine Requirements
@@ -632,7 +637,108 @@ async def terraform_validator_node(state: CarlosState):
 
     convo = state.get("conversation", "")
     convo += "**Terraform Validator:**\n" + validation_report + "\n\n"
-    return {"terraform_validation": validation_report, "conversation": convo, "terraform_validator_tokens": tokens}
+
+    # Parse validation status from the report
+    validation_status = "PASS"
+    upper_report = validation_report.upper()
+    if "NEEDS FIXES" in upper_report or "NEEDS_FIXES" in upper_report:
+        validation_status = "NEEDS_FIXES"
+    elif "PASS WITH WARNINGS" in upper_report or "PASS_WITH_WARNINGS" in upper_report:
+        validation_status = "PASS_WITH_WARNINGS"
+
+    return {
+        "terraform_validation": validation_report,
+        "terraform_validation_status": validation_status,
+        "conversation": convo,
+        "terraform_validator_tokens": tokens
+    }
+
+
+def terraform_validation_router(state: CarlosState):
+    """Route based on validation status and iteration count.
+
+    Returns:
+        - "terraform_corrector" if issues need fixing and iterations remain
+        - "end" if validation passed or max iterations reached
+    """
+    MAX_CORRECTION_ITERATIONS = 2
+
+    validation_status = state.get("terraform_validation_status", "PASS")
+    current_iteration = state.get("terraform_correction_iteration", 0)
+
+    # If validation passed (with or without warnings after corrections), we're done
+    if validation_status == "PASS":
+        print(f"  ✅ Terraform validation PASSED")
+        return "end"
+
+    # If passed with warnings, accept it (warnings are advisory)
+    if validation_status == "PASS_WITH_WARNINGS":
+        print(f"  ✅ Terraform validation PASSED WITH WARNINGS (acceptable)")
+        return "end"
+
+    # If needs fixes, check if we have iterations remaining
+    if validation_status == "NEEDS_FIXES":
+        if current_iteration < MAX_CORRECTION_ITERATIONS:
+            print(f"  🔄 Terraform needs fixes - routing to corrector (iteration {current_iteration + 1}/{MAX_CORRECTION_ITERATIONS})")
+            return "terraform_corrector"
+        else:
+            print(f"  ⚠️ Max correction iterations ({MAX_CORRECTION_ITERATIONS}) reached - returning best effort code")
+            return "end"
+
+    # Default: end
+    return "end"
+
+
+async def terraform_coder_corrector_node(state: CarlosState):
+    """Fix Terraform code based on validator feedback with streaming."""
+    terraform_code = state.get("terraform_code", "")
+    validation_report = state.get("terraform_validation", "")
+    recommendation = state.get("recommendation", "")
+    current_iteration = state.get("terraform_correction_iteration", 0)
+
+    # Determine which design was recommended
+    recommended_design = state.get("design_doc", "")
+    if "RECOMMEND: RONEI" in recommendation.upper():
+        recommended_design = state.get("ronei_design", "")
+
+    # Increment iteration count
+    new_iteration = current_iteration + 1
+
+    # Build the corrector prompt with context
+    system_prompt = TERRAFORM_CODER_CORRECTOR_INSTRUCTIONS.replace("{iteration}", str(new_iteration))
+
+    user_content = (
+        f"=== User Requirements ===\n{state['requirements']}\n\n"
+        f"=== Recommended Design ===\n{recommended_design}\n\n"
+        f"=== Previous Terraform Code ===\n{terraform_code}\n\n"
+        f"=== Validator Feedback (Iteration {new_iteration}) ===\n{validation_report}\n\n"
+        f"Please fix all identified issues and produce corrected Terraform code."
+    )
+
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_content)
+    ]
+
+    pool = get_pool()
+    corrected_code = ""
+    tokens = []
+
+    async with pool.get_main_llm() as llm:
+        async for chunk in llm.astream(messages):
+            token = chunk.content
+            corrected_code += token
+            tokens.append(token)
+
+    convo = state.get("conversation", "")
+    convo += f"**Terraform Coder (Correction {new_iteration}):**\n" + corrected_code + "\n\n"
+
+    return {
+        "terraform_code": corrected_code,
+        "terraform_correction_iteration": new_iteration,
+        "conversation": convo,
+        "terraform_corrector_tokens": tokens
+    }
 
 
 # Build graph
@@ -650,6 +756,7 @@ builder.add_node("audit", auditor_node)
 builder.add_node("recommender", recommender_node)
 builder.add_node("terraform_coder", terraform_coder_node)
 builder.add_node("terraform_validator", terraform_validator_node)
+builder.add_node("terraform_corrector", terraform_coder_corrector_node)
 
 # Conditional start: if user_answers exist, skip to refine_requirements, otherwise gather requirements
 def should_gather_requirements(state):
@@ -694,6 +801,15 @@ builder.add_conditional_edges(
 
 builder.add_edge("recommender", "terraform_coder")
 builder.add_edge("terraform_coder", "terraform_validator")
-builder.add_edge("terraform_validator", END)
+
+# Terraform validation feedback loop:
+# - If validation passes or max iterations reached -> END
+# - If validation needs fixes -> terraform_corrector -> terraform_validator (loop)
+builder.add_conditional_edges(
+    "terraform_validator",
+    terraform_validation_router,
+    {"terraform_corrector": "terraform_corrector", "end": END}
+)
+builder.add_edge("terraform_corrector", "terraform_validator")
 
 carlos_graph = builder.compile()

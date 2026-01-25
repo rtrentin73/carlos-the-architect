@@ -633,6 +633,7 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                         "ronei_tokens": "ronei_design",
                         "terraform_tokens": "terraform_coder",
                         "terraform_validator_tokens": "terraform_validator",
+                        "terraform_corrector_tokens": "terraform_corrector",
                         "requirements_tokens": "requirements_gathering",
                         "refine_tokens": "refine_requirements",
                         "security_tokens": "security",
@@ -663,6 +664,7 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                         "recommender": "recommendation",
                         "terraform_coder": "terraform_code",
                         "terraform_validator": "terraform_validation",
+                        "terraform_corrector": "terraform_code",  # Corrector updates the same field
                         "requirements_gathering": "refined_requirements",
                         "refine_requirements": "refined_requirements",
                     }
@@ -715,6 +717,8 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
                 "reliability_report": final_state.get("reliability_report", ""),
                 "terraform_code": final_state.get("terraform_code", ""),
                 "terraform_validation": final_state.get("terraform_validation", ""),
+                "terraform_correction_iterations": final_state.get("terraform_correction_iteration", 0),
+                "terraform_validation_status": final_state.get("terraform_validation_status", ""),
                 "clarification_needed": clarification_needed,
                 # Structured data for programmatic access
                 "structured_data": {
