@@ -55,7 +55,7 @@
   - `src/components/StarRating.jsx` – Interactive star rating component.
   - `vite.config.js`, `package.json` – Vite/React configuration and dependencies.
 - `infra/`
-  - `main.tf` – Terraform configuration for Azure resources (AKS, ACR, Redis, Cosmos DB).
+  - `main.tf` – Terraform configuration for Azure resources (AKS, ACR, Redis, Cosmos DB, Document Intelligence).
   - `variables.tf` – Terraform variable definitions.
   - `outputs.tf` – Terraform outputs for CI/CD.
 - `k8s/`
@@ -114,9 +114,13 @@ COSMOSDB_ENDPOINT="https://your-cosmos.documents.azure.com:443/"
 COSMOSDB_KEY="your-cosmos-key"
 COSMOSDB_DATABASE="carlos-feedback"
 COSMOSDB_CONTAINER="deployments"
+
+# Azure AI Document Intelligence (optional - enables OCR for images and scanned PDFs)
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT="https://your-docint.cognitiveservices.azure.com/"
+AZURE_DOCUMENT_INTELLIGENCE_KEY="your-document-intelligence-key"
 ```
 
-> **Note:** Redis and Cosmos DB are optional for local development. Without them, the app uses in-memory storage (data is lost on restart).
+> **Note:** Redis, Cosmos DB, and Document Intelligence are optional for local development. Without them, the app uses in-memory storage (data is lost on restart) and image/scanned PDF upload is disabled.
 
 ---
 
@@ -263,6 +267,7 @@ You should see the Carlos AI splash screen, then the main dashboard.
   - Azure OpenAI (AzureChatOpenAI)
   - Azure Cache for Redis (design caching)
   - Azure Cosmos DB (feedback persistence)
+  - Azure AI Document Intelligence (OCR for images and scanned PDFs)
 
 - **Frontend**
   - React 18 + Vite
@@ -282,9 +287,11 @@ You should see the Carlos AI splash screen, then the main dashboard.
 
 Carlos includes production-ready deployment infrastructure:
 
-1. **Terraform** provisions Azure resources (AKS, ACR, Redis, Cosmos DB)
+1. **Terraform** provisions Azure resources (AKS, ACR, Redis, Cosmos DB, Document Intelligence)
 2. **GitHub Actions** builds Docker images and deploys to AKS on push to `main`
 3. **Kubernetes** manages auto-scaling and health checks
+
+All Azure service credentials (Redis, Cosmos DB, Document Intelligence) are automatically extracted from Terraform outputs and injected into Kubernetes secrets during deployment.
 
 See `.github/workflows/deploy-azure.yml` for the complete CI/CD pipeline.
 
