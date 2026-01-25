@@ -38,6 +38,8 @@ def _extract_with_document_intelligence(content: bytes, filename: str = "") -> s
     Raises:
         ValueError: If Azure AI Document Intelligence is not configured or extraction fails
     """
+    import base64
+
     endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
     key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
 
@@ -58,10 +60,14 @@ def _extract_with_document_intelligence(content: bytes, filename: str = "") -> s
             credential=AzureKeyCredential(key)
         )
 
+        # Base64 encode the content as required by the API
+        # See: https://learn.microsoft.com/en-us/python/api/azure-ai-documentintelligence/azure.ai.documentintelligence.models.analyzedocumentrequest
+        base64_content = base64.b64encode(content)
+
         # Analyze document using prebuilt-read model (best for OCR)
         poller = client.begin_analyze_document(
             model_id="prebuilt-read",
-            analyze_request=AnalyzeDocumentRequest(bytes_source=content),
+            analyze_request=AnalyzeDocumentRequest(bytes_source=base64_content),
         )
 
         result = poller.result()
