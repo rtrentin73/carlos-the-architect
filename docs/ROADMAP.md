@@ -20,6 +20,7 @@ Transform Carlos from a specialized cloud architecture design tool into an **ent
 - ✅ **Deployment feedback loop** (Azure Cosmos DB) - track deployment outcomes and user satisfaction
 - ✅ **Azure Kubernetes Service (AKS)** deployment with auto-scaling
 - ✅ **GitHub Actions CI/CD** pipeline with Terraform infrastructure-as-code
+- ✅ **OAuth authentication** (Google & GitHub) - optional social login with graceful degradation
 
 **Limitations:**
 - ✅ **Historical learning from feedback data** - designs now incorporate patterns from successful past deployments
