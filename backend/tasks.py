@@ -480,7 +480,14 @@ Your job is to validate the Terraform code for:
 Respond in markdown with these sections:
 
 ## Validation Summary
-[Overall assessment: PASS, PASS WITH WARNINGS, or NEEDS FIXES]
+**Status: [EXACTLY ONE OF: PASS | PASS WITH WARNINGS | NEEDS FIXES]**
+
+IMPORTANT: You MUST use EXACTLY one of these three status keywords on its own line:
+- "Status: PASS" - Code is production-ready
+- "Status: PASS WITH WARNINGS" - Code works but has non-blocking issues
+- "Status: NEEDS FIXES" - Code has critical issues that MUST be fixed before deployment
+
+If you find ANY critical issues (❌ section is not empty), you MUST use "Status: NEEDS FIXES".
 
 ## ✅ Strengths
 - [List what's done well]

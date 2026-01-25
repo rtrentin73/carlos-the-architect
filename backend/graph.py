@@ -639,12 +639,39 @@ async def terraform_validator_node(state: CarlosState):
     convo += "**Terraform Validator:**\n" + validation_report + "\n\n"
 
     # Parse validation status from the report
+    # Look for explicit "Status:" line first, then fall back to keyword detection
     validation_status = "PASS"
     upper_report = validation_report.upper()
-    if "NEEDS FIXES" in upper_report or "NEEDS_FIXES" in upper_report:
-        validation_status = "NEEDS_FIXES"
-    elif "PASS WITH WARNINGS" in upper_report or "PASS_WITH_WARNINGS" in upper_report:
-        validation_status = "PASS_WITH_WARNINGS"
+
+    # Primary detection: Look for "Status: NEEDS FIXES" or similar patterns
+    import re
+    status_match = re.search(r'STATUS[:\s]+\**(NEEDS\s*FIXES|PASS\s*WITH\s*WARNINGS|PASS)\**', upper_report)
+    if status_match:
+        status_text = status_match.group(1).strip()
+        if "NEEDS" in status_text and "FIX" in status_text:
+            validation_status = "NEEDS_FIXES"
+        elif "WARNING" in status_text:
+            validation_status = "PASS_WITH_WARNINGS"
+        else:
+            validation_status = "PASS"
+    else:
+        # Fallback: Look for keywords anywhere in the report
+        if "NEEDS FIXES" in upper_report or "NEEDS_FIXES" in upper_report or "NEED TO FIX" in upper_report:
+            validation_status = "NEEDS_FIXES"
+        elif "PASS WITH WARNINGS" in upper_report or "PASS_WITH_WARNINGS" in upper_report:
+            validation_status = "PASS_WITH_WARNINGS"
+
+    # Additional check: If there are critical issues mentioned, override to NEEDS_FIXES
+    if "❌ CRITICAL" in validation_report.upper() or "## ❌" in validation_report:
+        # Check if critical issues section has actual content (not just empty)
+        critical_section = re.search(r'❌[^\n]*\n+(.*?)(?=\n##|\Z)', validation_report, re.DOTALL | re.IGNORECASE)
+        if critical_section:
+            critical_content = critical_section.group(1).strip()
+            # If there's actual content after the header (not just "None" or empty)
+            if critical_content and "none" not in critical_content.lower()[:50] and len(critical_content) > 10:
+                validation_status = "NEEDS_FIXES"
+
+    print(f"  📋 Terraform validation status parsed: {validation_status}")
 
     return {
         "terraform_validation": validation_report,
@@ -666,26 +693,34 @@ def terraform_validation_router(state: CarlosState):
     validation_status = state.get("terraform_validation_status", "PASS")
     current_iteration = state.get("terraform_correction_iteration", 0)
 
+    print(f"\n{'='*60}")
+    print(f"  🔀 TERRAFORM VALIDATION ROUTER")
+    print(f"     Status: {validation_status}")
+    print(f"     Current iteration: {current_iteration}")
+    print(f"     Max iterations: {MAX_CORRECTION_ITERATIONS}")
+    print(f"{'='*60}\n")
+
     # If validation passed (with or without warnings after corrections), we're done
     if validation_status == "PASS":
-        print(f"  ✅ Terraform validation PASSED")
+        print(f"  ✅ Terraform validation PASSED - proceeding to END")
         return "end"
 
     # If passed with warnings, accept it (warnings are advisory)
     if validation_status == "PASS_WITH_WARNINGS":
-        print(f"  ✅ Terraform validation PASSED WITH WARNINGS (acceptable)")
+        print(f"  ✅ Terraform validation PASSED WITH WARNINGS (acceptable) - proceeding to END")
         return "end"
 
     # If needs fixes, check if we have iterations remaining
     if validation_status == "NEEDS_FIXES":
         if current_iteration < MAX_CORRECTION_ITERATIONS:
-            print(f"  🔄 Terraform needs fixes - routing to corrector (iteration {current_iteration + 1}/{MAX_CORRECTION_ITERATIONS})")
+            print(f"  🔄 Terraform NEEDS FIXES - routing to terraform_corrector (iteration {current_iteration + 1}/{MAX_CORRECTION_ITERATIONS})")
             return "terraform_corrector"
         else:
             print(f"  ⚠️ Max correction iterations ({MAX_CORRECTION_ITERATIONS}) reached - returning best effort code")
             return "end"
 
     # Default: end
+    print(f"  ❓ Unknown status '{validation_status}' - defaulting to END")
     return "end"
 
 
