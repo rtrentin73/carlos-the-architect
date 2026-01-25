@@ -39,6 +39,9 @@ from auth import (
     get_or_create_oauth_user,
     require_admin,
     seed_admin_user,
+    get_all_users,
+    set_user_admin,
+    set_user_disabled,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY,
 )
@@ -84,6 +87,9 @@ async def lifespan(app: FastAPI):
 
     # Initialize feedback store (Redis if available, otherwise in-memory)
     await initialize_feedback_store()
+
+    # Initialize audit store (Cosmos DB if available, otherwise in-memory)
+    await initialize_audit_store()
 
     # Seed default admin user
     seed_admin_user()
@@ -855,3 +861,269 @@ async def github_callback(request: Request):
         return RedirectResponse(
             url=f"{OAUTH_REDIRECT_BASE}/auth/callback?error=oauth_failed"
         )
+
+
+# ============================================================================
+# Admin Endpoints
+# ============================================================================
+
+@app.get("/admin/audit")
+async def get_audit_logs(
+    username: str = None,
+    action_prefix: str = None,
+    severity: str = None,
+    limit: int = 50,
+    offset: int = 0,
+    current_user: User = Depends(require_admin)
+):
+    """Query audit logs. Admin only."""
+    try:
+        store = get_audit_store()
+
+        # Build query params
+        params = AuditQueryParams(
+            username=username if username else None,
+            action_prefix=action_prefix if action_prefix else None,
+            severity=AuditSeverity(severity) if severity else None,
+            limit=min(limit, 1000),
+            offset=offset,
+        )
+
+        records = await store.query(params)
+
+        return {
+            "records": [
+                {
+                    "audit_id": r.audit_id,
+                    "timestamp": r.timestamp.isoformat(),
+                    "username": r.username,
+                    "action": r.action.value,
+                    "endpoint": r.endpoint,
+                    "method": r.method,
+                    "status_code": r.status_code,
+                    "severity": r.severity.value,
+                    "duration_ms": r.duration_ms,
+                    "error_message": r.error_message,
+                }
+                for r in records
+            ],
+            "count": len(records),
+            "offset": offset,
+            "limit": limit,
+        }
+    except Exception as e:
+        print(f"❌ Error querying audit logs: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to query audit logs: {str(e)}"
+        )
+
+
+@app.get("/admin/audit/stats")
+async def get_audit_stats(
+    days: int = 30,
+    current_user: User = Depends(require_admin)
+):
+    """Get audit statistics. Admin only."""
+    try:
+        store = get_audit_store()
+        stats = await store.get_stats(days=days)
+
+        return {
+            "stats": stats,
+            "generated_at": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        print(f"❌ Error getting audit stats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get audit stats: {str(e)}"
+        )
+
+
+@app.get("/admin/audit/export")
+async def export_audit_logs(
+    format: str = "json",
+    username: str = None,
+    action_prefix: str = None,
+    limit: int = 1000,
+    current_user: User = Depends(require_admin)
+):
+    """Export audit logs in JSON or CSV format. Admin only."""
+    try:
+        store = get_audit_store()
+
+        params = AuditQueryParams(
+            username=username if username else None,
+            action_prefix=action_prefix if action_prefix else None,
+            limit=min(limit, 10000),
+        )
+
+        records = await store.query(params)
+
+        if format == "csv":
+            import io
+            import csv
+
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow([
+                "audit_id", "timestamp", "username", "action", "endpoint",
+                "method", "status_code", "severity", "duration_ms", "error_message"
+            ])
+
+            for r in records:
+                writer.writerow([
+                    r.audit_id,
+                    r.timestamp.isoformat(),
+                    r.username or "",
+                    r.action.value,
+                    r.endpoint,
+                    r.method,
+                    r.status_code or "",
+                    r.severity.value,
+                    r.duration_ms or "",
+                    r.error_message or "",
+                ])
+
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": "attachment; filename=audit_export.csv"}
+            )
+        else:
+            # JSON format
+            export_data = [
+                {
+                    "audit_id": r.audit_id,
+                    "timestamp": r.timestamp.isoformat(),
+                    "username": r.username,
+                    "action": r.action.value,
+                    "endpoint": r.endpoint,
+                    "method": r.method,
+                    "status_code": r.status_code,
+                    "severity": r.severity.value,
+                    "duration_ms": r.duration_ms,
+                    "error_message": r.error_message,
+                    "metadata": r.metadata,
+                }
+                for r in records
+            ]
+
+            return StreamingResponse(
+                iter([json.dumps(export_data, indent=2)]),
+                media_type="application/json",
+                headers={"Content-Disposition": "attachment; filename=audit_export.json"}
+            )
+    except Exception as e:
+        print(f"❌ Error exporting audit logs: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export audit logs: {str(e)}"
+        )
+
+
+@app.get("/admin/users")
+async def list_users(current_user: User = Depends(require_admin)):
+    """List all users. Admin only."""
+    users = get_all_users()
+    return {
+        "users": [
+            {
+                "username": u.username,
+                "email": u.email,
+                "is_admin": u.is_admin,
+                "disabled": u.disabled,
+            }
+            for u in users
+        ],
+        "count": len(users)
+    }
+
+
+@app.post("/admin/users/{username}/promote")
+async def promote_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """Promote a user to admin. Admin only."""
+    if username == current_user.username:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify your own admin status"
+        )
+
+    user = set_user_admin(username, True)
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return {"message": f"User {username} promoted to admin", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/demote")
+async def demote_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """Remove admin status from a user. Admin only."""
+    if username == current_user.username:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify your own admin status"
+        )
+
+    user = set_user_admin(username, False)
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return {"message": f"User {username} demoted from admin", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/enable")
+async def enable_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """Enable a user account. Admin only."""
+    if username == current_user.username:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify your own account status"
+        )
+
+    user = set_user_disabled(username, False)
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return {"message": f"User {username} enabled", "user": user.model_dump()}
+
+
+@app.post("/admin/users/{username}/disable")
+async def disable_user(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """Disable a user account. Admin only."""
+    if username == current_user.username:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot modify your own account status"
+        )
+
+    user = set_user_disabled(username, True)
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return {"message": f"User {username} disabled", "user": user.model_dump()}
