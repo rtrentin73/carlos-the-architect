@@ -19,6 +19,10 @@ from feedback import (
     initialize_feedback_store,
     close_feedback_store,
 )
+from user_store import (
+    initialize_user_store,
+    close_user_store,
+)
 from audit import (
     AuditRecord,
     AuditAction,
@@ -91,8 +95,11 @@ async def lifespan(app: FastAPI):
     # Initialize audit store (Cosmos DB if available, otherwise in-memory)
     await initialize_audit_store()
 
+    # Initialize user store (Cosmos DB if available, otherwise in-memory)
+    await initialize_user_store()
+
     # Seed default admin user
-    seed_admin_user()
+    await seed_admin_user()
 
     print("✅ Backend ready to serve requests")
 
@@ -114,6 +121,9 @@ async def lifespan(app: FastAPI):
 
     # Close audit store
     await close_audit_store()
+
+    # Close user store
+    await close_user_store()
 
     print("✅ Shutdown complete")
 
@@ -239,7 +249,7 @@ async def register(user_data: UserCreate):
 
     Returns the created user object. After registration, use `/auth/login` to obtain an access token.
     """
-    return create_user(user_data)
+    return await create_user(user_data)
 
 
 @app.post("/auth/login", response_model=Token, tags=["Authentication"], summary="Login")
@@ -255,7 +265,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 
     Tokens expire after 24 hours. Rate limited to 20 attempts per minute.
     """
-    user = authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -963,7 +973,7 @@ async def google_callback(request: Request):
             )
 
         # Get or create user
-        user = get_or_create_oauth_user(
+        user = await get_or_create_oauth_user(
             provider="google",
             oauth_id=user_info.get("sub"),
             email=user_info.get("email", ""),
@@ -1042,7 +1052,7 @@ async def github_callback(request: Request):
                     break
 
         # Get or create user
-        user = get_or_create_oauth_user(
+        user = await get_or_create_oauth_user(
             provider="github",
             oauth_id=str(user_info.get("id")),
             email=email or "",
@@ -1277,7 +1287,7 @@ async def list_users(current_user: User = Depends(require_admin)):
 
     Returns user details including username, email, admin status, and account status.
     """
-    users = get_all_users()
+    users = await get_all_users()
     return {
         "users": [
             {
@@ -1309,7 +1319,7 @@ async def promote_user(
             detail="Cannot modify your own admin status"
         )
 
-    user = set_user_admin(username, True)
+    user = await set_user_admin(username, True)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1336,7 +1346,7 @@ async def demote_user(
             detail="Cannot modify your own admin status"
         )
 
-    user = set_user_admin(username, False)
+    user = await set_user_admin(username, False)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1363,7 +1373,7 @@ async def enable_user(
             detail="Cannot modify your own account status"
         )
 
-    user = set_user_disabled(username, False)
+    user = await set_user_disabled(username, False)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1391,7 +1401,7 @@ async def disable_user(
             detail="Cannot modify your own account status"
         )
 
-    user = set_user_disabled(username, True)
+    user = await set_user_disabled(username, True)
     if not user:
         raise HTTPException(
             status_code=404,
