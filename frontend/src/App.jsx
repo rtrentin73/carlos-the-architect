@@ -1397,7 +1397,58 @@ function MermaidDiagram({ definition }) {
 
     const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
 
-    mermaid.initialize({ startOnLoad: false });
+    // Professional Mermaid theme configuration
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: {
+        // Primary colors - modern blue palette
+        primaryColor: '#3b82f6',
+        primaryTextColor: '#ffffff',
+        primaryBorderColor: '#2563eb',
+        // Secondary colors
+        secondaryColor: '#e0e7ff',
+        secondaryTextColor: '#1e40af',
+        secondaryBorderColor: '#6366f1',
+        // Tertiary colors
+        tertiaryColor: '#f0fdf4',
+        tertiaryTextColor: '#166534',
+        tertiaryBorderColor: '#22c55e',
+        // Background and lines
+        background: '#ffffff',
+        mainBkg: '#f8fafc',
+        lineColor: '#64748b',
+        // Node colors
+        nodeBorder: '#334155',
+        clusterBkg: '#f1f5f9',
+        clusterBorder: '#cbd5e1',
+        // Text
+        titleColor: '#0f172a',
+        textColor: '#334155',
+        // Flowchart specific
+        edgeLabelBackground: '#ffffff',
+        // Fonts
+        fontFamily: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+      },
+      flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        padding: 20,
+        nodeSpacing: 50,
+        rankSpacing: 70,
+        useMaxWidth: true,
+      },
+      sequence: {
+        diagramMarginX: 20,
+        diagramMarginY: 20,
+        actorMargin: 80,
+        boxMargin: 10,
+        boxTextMargin: 10,
+        noteMargin: 15,
+        messageMargin: 45,
+        useMaxWidth: true,
+      },
+    });
 
     mermaid
       .render(id, definition)
@@ -1421,7 +1472,17 @@ function MermaidDiagram({ definition }) {
       });
   }, [definition]);
 
-  return <div ref={containerRef} className="overflow-x-auto" />;
+  return (
+    <div className="bg-gradient-to-br from-slate-50 to-blue-50 border border-slate-200 rounded-xl p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <div className="h-8 w-8 rounded-lg bg-blue-100 flex items-center justify-center">
+          <Layout size={18} className="text-blue-600" />
+        </div>
+        <h3 className="font-semibold text-slate-700">Architecture Diagram</h3>
+      </div>
+      <div ref={containerRef} className="overflow-x-auto bg-white rounded-lg p-4 border border-slate-100" />
+    </div>
+  );
 }
 
 function AnalyticsView({ history }) {
