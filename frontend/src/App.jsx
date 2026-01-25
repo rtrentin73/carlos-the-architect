@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode, Trash2 } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode, Trash2, Clock, Hash } from 'lucide-react';
 import Splash from './components/Splash';
 import LoginPage from './components/LoginPage';
 import DeploymentTracker from './components/DeploymentTracker';
@@ -45,6 +45,7 @@ export default function App() {
   const [references, setReferences] = useState([]);
   const [currentView, setCurrentView] = useState("blueprint");
   const [currentDesignId, setCurrentDesignId] = useState(null);
+  const [designStartTime, setDesignStartTime] = useState(null);
 
   // Requirements clarification state
   const [clarificationNeeded, setClarificationNeeded] = useState(false);
@@ -301,6 +302,10 @@ export default function App() {
         const designId = `design-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         setCurrentDesignId(designId);
 
+        // Calculate total tokens and duration
+        const totalTokens = Object.values(tokenCounts).reduce((sum, count) => sum + (count || 0), 0);
+        const durationSeconds = designStartTime ? Math.round((Date.now() - designStartTime) / 1000) : 0;
+
         const newEntry = {
           id: designId,
           requirements: input,
@@ -322,6 +327,8 @@ export default function App() {
           agentChat: summary.agent_chat || "",
           carlosTokens: tokenCounts.carlos,
           roneiTokens: tokenCounts.ronei_design,
+          totalTokens,
+          durationSeconds,
           timestamp: new Date().toLocaleString()
         };
         const updatedHistory = [newEntry, ...history];
@@ -518,6 +525,7 @@ export default function App() {
       terraform_coder: 0
     });
     setIsDesigning(true);
+    setDesignStartTime(Date.now());
 
     // Save original requirements on first call
     if (!providedAnswers) {
@@ -1126,20 +1134,23 @@ export default function App() {
                             <p className="font-semibold text-slate-800">{entry.requirements.substring(0, 50)}...</p>
                             <div className="flex items-center gap-4 mt-1">
                               <p className="text-sm text-slate-500">{entry.timestamp}</p>
-                              {(entry.carlosTokens || entry.roneiTokens) && (
-                                <div className="flex items-center gap-2 text-xs">
-                                  {entry.carlosTokens > 0 && (
-                                    <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded">
-                                      Carlos: {entry.carlosTokens.toLocaleString()} tokens
-                                    </span>
-                                  )}
-                                  {entry.roneiTokens > 0 && (
-                                    <span className="bg-pink-50 text-pink-600 px-2 py-0.5 rounded">
-                                      Ronei: {entry.roneiTokens.toLocaleString()} tokens
-                                    </span>
-                                  )}
-                                </div>
-                              )}
+                              <div className="flex items-center gap-3 text-xs">
+                                {entry.totalTokens > 0 && (
+                                  <span className="flex items-center gap-1 bg-purple-50 text-purple-600 px-2 py-0.5 rounded" title="Total tokens consumed">
+                                    <Hash size={12} />
+                                    {entry.totalTokens.toLocaleString()} tokens
+                                  </span>
+                                )}
+                                {entry.durationSeconds > 0 && (
+                                  <span className="flex items-center gap-1 bg-slate-100 text-slate-600 px-2 py-0.5 rounded" title="Design generation time">
+                                    <Clock size={12} />
+                                    {entry.durationSeconds >= 60
+                                      ? `${Math.floor(entry.durationSeconds / 60)}m ${entry.durationSeconds % 60}s`
+                                      : `${entry.durationSeconds}s`
+                                    }
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 ml-4">
