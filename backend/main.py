@@ -118,7 +118,78 @@ async def lifespan(app: FastAPI):
     print("✅ Shutdown complete")
 
 
-app = FastAPI(title="Carlos the Architect API", lifespan=lifespan)
+# API Tags for documentation grouping
+tags_metadata = [
+    {
+        "name": "Health",
+        "description": "Health check and status endpoints for monitoring and orchestration.",
+    },
+    {
+        "name": "Authentication",
+        "description": "User authentication including login, registration, and OAuth providers (Google, GitHub).",
+    },
+    {
+        "name": "Design",
+        "description": "AI-powered cloud architecture design generation. Supports both synchronous and streaming responses.",
+    },
+    {
+        "name": "Documents",
+        "description": "Document upload and processing for extracting requirements from PDF, DOCX, TXT, MD, and XLSX files.",
+    },
+    {
+        "name": "Feedback",
+        "description": "Deployment feedback and analytics to track design outcomes and improve future recommendations.",
+    },
+    {
+        "name": "Cache",
+        "description": "Design pattern cache management for faster responses on common architecture patterns.",
+    },
+    {
+        "name": "Admin",
+        "description": "Administrative endpoints for audit logs and user management. Requires admin privileges.",
+    },
+]
+
+app = FastAPI(
+    title="Carlos the Architect API",
+    description="""
+## AI-Powered Cloud Architecture Design
+
+Carlos the Architect is an intelligent assistant that generates production-ready cloud architecture designs
+based on natural language requirements.
+
+### Features
+
+- **Multi-Agent Design Pipeline**: Requirements gathering, security analysis, cost optimization, and reliability assessment
+- **Streaming Responses**: Real-time token streaming for immediate feedback during design generation
+- **Document Processing**: Upload existing documentation to inform design decisions
+- **Deployment Feedback**: Track design outcomes to continuously improve recommendations
+- **OAuth Authentication**: Sign in with Google or GitHub
+
+### Getting Started
+
+1. Register or login to get an access token
+2. Submit your requirements to `/design-stream` for real-time generation
+3. Optionally upload context documents via `/upload-document`
+4. Provide deployment feedback to improve future designs
+
+### Rate Limits
+
+- Design endpoints: 10 requests/hour
+- Document uploads: 30 uploads/hour
+- Login attempts: 20/minute
+    """,
+    version="1.1.0",
+    openapi_tags=tags_metadata,
+    lifespan=lifespan,
+    contact={
+        "name": "Carlos the Architect",
+        "url": "https://github.com/rtrentin73/carlos-the-architect",
+    },
+    license_info={
+        "name": "MIT",
+    },
+)
 
 # Configure rate limiting
 app.state.limiter = limiter
@@ -139,9 +210,14 @@ app.add_middleware(
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 
-@app.get("/health")
+@app.get("/health", tags=["Health"], summary="Health check")
 async def health():
-    """Health check endpoint for container orchestration."""
+    """
+    Health check endpoint for container orchestration (Kubernetes, Docker, etc.).
+
+    Returns the current health status and LLM connection pool statistics.
+    Use this endpoint for liveness and readiness probes.
+    """
     pool = get_pool()
     pool_stats = pool.get_pool_stats()
 
@@ -152,16 +228,33 @@ async def health():
 
 
 # Auth endpoints
-@app.post("/auth/register", response_model=User)
+@app.post("/auth/register", response_model=User, tags=["Authentication"], summary="Register new user")
 async def register(user_data: UserCreate):
-    """Register a new user."""
+    """
+    Register a new local user account.
+
+    - **username**: Unique username (required)
+    - **password**: Password for the account (required)
+    - **email**: Optional email address
+
+    Returns the created user object. After registration, use `/auth/login` to obtain an access token.
+    """
     return create_user(user_data)
 
 
-@app.post("/auth/login", response_model=Token)
+@app.post("/auth/login", response_model=Token, tags=["Authentication"], summary="Login")
 @limiter.limit("20/minute")
 async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
-    """Login and get access token."""
+    """
+    Authenticate with username and password to obtain a JWT access token.
+
+    The token should be included in subsequent requests as a Bearer token:
+    ```
+    Authorization: Bearer <access_token>
+    ```
+
+    Tokens expire after 24 hours. Rate limited to 20 attempts per minute.
+    """
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
@@ -176,9 +269,17 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.get("/auth/me", response_model=User)
+@app.get("/auth/me", response_model=User, tags=["Authentication"], summary="Get current user")
 async def get_me(current_user: User = Depends(get_current_active_user)):
-    """Get current user info."""
+    """
+    Get the currently authenticated user's profile.
+
+    Requires a valid Bearer token. Returns user details including:
+    - username
+    - email (if provided)
+    - admin status
+    - authentication provider (local, google, github)
+    """
     return current_user
 
 
@@ -213,21 +314,30 @@ async def _process_document_background(task_id: str, file_path: str):
             print(f"⚠️  Failed to remove temp file {file_path}: {e}")
 
 
-@app.post("/upload-document")
+@app.post("/upload-document", tags=["Documents"], summary="Upload document for processing")
 @limiter.limit("30/hour")
 async def upload_document(
     request: Request,
-    file: UploadFile = File(...),
+    file: UploadFile = File(..., description="Document file to upload"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     current_user: User = Depends(get_current_active_user)
 ):
     """
     Upload a document for asynchronous text extraction.
 
-    Supports: PDF, DOCX, TXT, MD, XLSX (max 50MB)
+    **Supported formats:** PDF, DOCX, TXT, MD, XLSX
 
-    Returns a task ID to poll for processing status.
-    Use GET /documents/{task_id} to check status and retrieve extracted text.
+    **Size limit:** 50MB
+
+    Documents are processed in the background. After uploading:
+    1. You receive a `task_id` immediately
+    2. Poll `GET /documents/{task_id}` to check processing status
+    3. Once complete, the extracted text is available in the response
+
+    The extracted text can be included in design requests to provide context
+    about existing infrastructure or requirements.
+
+    Rate limited to 30 uploads per hour.
     """
     print(f"📤 Document upload from {current_user.username}: {file.filename}")
 
@@ -278,7 +388,7 @@ async def upload_document(
         )
 
 
-@app.get("/documents/{task_id}")
+@app.get("/documents/{task_id}", tags=["Documents"], summary="Get document processing status")
 async def get_document_status(
     task_id: str,
     current_user: User = Depends(get_current_active_user)
@@ -286,12 +396,14 @@ async def get_document_status(
     """
     Check document processing status and retrieve extracted text.
 
-    Returns:
-        - task_id: Unique task identifier
-        - filename: Original filename
-        - status: pending | processing | completed | failed
-        - extracted_text: Extracted text (only when completed)
-        - error: Error message (only when failed)
+    **Response fields:**
+    - `task_id`: Unique task identifier
+    - `filename`: Original filename
+    - `status`: `pending` | `processing` | `completed` | `failed`
+    - `extracted_text`: Extracted text content (only when status is `completed`)
+    - `error`: Error message (only when status is `failed`)
+
+    Poll this endpoint after uploading to check when processing completes.
     """
     task = get_task(task_id)
 
@@ -305,12 +417,17 @@ async def get_document_status(
     return task.to_dict()
 
 
-@app.get("/documents")
+@app.get("/documents", tags=["Documents"], summary="List uploaded documents")
 async def list_user_documents(
     current_user: User = Depends(get_current_active_user),
     limit: int = 10
 ):
-    """List recent document processing tasks for current user"""
+    """
+    List recent document processing tasks for the current user.
+
+    Returns the most recent uploads with their processing status.
+    Use this to track multiple document uploads or find previous extractions.
+    """
     tasks = get_user_tasks(current_user.username, limit=limit)
     return {
         "tasks": [task.to_dict() for task in tasks],
@@ -318,16 +435,40 @@ async def list_user_documents(
     }
 
 
-@app.post("/design")
+@app.post("/design", tags=["Design"], summary="Generate architecture design (synchronous)")
 @limiter.limit("10/hour")
 async def design(request: Request, req: dict, current_user: User = Depends(get_current_active_user)):
-    """Return a full design document and its security audit.
+    """
+    Generate a complete cloud architecture design document.
 
-    Can be called in two phases:
-    1. Initial call with 'text' (requirements) - returns clarifying questions
-    2. Follow-up call with 'user_answers' - completes the design with refined requirements
+    **Two-phase conversation flow:**
 
-    Rate limited to 10 requests per hour per user.
+    1. **Initial request** - Send requirements in `text` field. Carlos may return
+       clarifying questions (`clarification_needed: true`)
+
+    2. **Follow-up request** - If clarification was needed, send answers in `user_answers`
+       field to complete the design
+
+    **Request body:**
+    ```json
+    {
+      "text": "I need a web application with user authentication...",
+      "scenario": "startup",
+      "priorities": {"cost": "high", "security": "medium"},
+      "user_answers": "Optional answers to clarifying questions"
+    }
+    ```
+
+    **Response includes:**
+    - `design`: Primary architecture design document
+    - `ronei_design`: Alternative design perspective
+    - `security_report`: Security analysis and recommendations
+    - `cost_report`: Cost estimation and optimization suggestions
+    - `reliability_report`: High availability and disaster recovery analysis
+    - `recommendation`: Final recommendation summary
+    - `terraform_code`: Infrastructure as Code (if applicable)
+
+    Rate limited to 10 requests per hour. For real-time streaming, use `/design-stream`.
     """
     print(f"Received request from {current_user.username}: {req}")
     try:
@@ -392,17 +533,35 @@ async def design(request: Request, req: dict, current_user: User = Depends(get_c
         return {"error": str(e)}
 
 
-@app.post("/design-stream")
+@app.post("/design-stream", tags=["Design"], summary="Generate architecture design (streaming)")
 @limiter.limit("10/hour")
 async def design_stream(request: Request, req: dict, current_user: User = Depends(get_current_active_user)):
-    """Stream design generation with real-time agent and token events.
+    """
+    Stream design generation with real-time agent and token events.
 
-    Can be called in two phases:
-    1. Initial call with 'text' (requirements) - returns clarifying questions
-    2. Follow-up call with 'user_answers' - completes the design with refined requirements
+    **Recommended endpoint** for interactive UIs - provides immediate feedback as the
+    multi-agent pipeline processes your requirements.
 
-    Rate limited to 10 requests per hour per user.
-    Caches common patterns for instant responses.
+    **Server-Sent Events (SSE) stream with event types:**
+
+    - `agent_start`: An agent has begun processing
+    - `token`: Real-time token output from an agent
+    - `field_update`: A report section has been completed
+    - `agent_complete`: An agent has finished
+    - `complete`: Final summary with all outputs
+    - `error`: Error occurred during processing
+
+    **Example SSE events:**
+    ```
+    data: {"type": "agent_start", "agent": "carlos", "timestamp": "..."}
+    data: {"type": "token", "agent": "carlos", "content": "# Architecture", "timestamp": "..."}
+    data: {"type": "complete", "summary": {...}, "timestamp": "..."}
+    ```
+
+    **Caching:** Common architecture patterns are cached for instant responses.
+    Cache hits are indicated by the `X-Cache-Status: HIT` response header.
+
+    Rate limited to 10 requests per hour.
     """
     print(f"Received streaming request from {current_user.username}: {req}")
 
@@ -601,9 +760,14 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
     )
 
 
-@app.get("/cache/stats")
+@app.get("/cache/stats", tags=["Cache"], summary="Get cache statistics")
 async def get_cache_stats(current_user: User = Depends(get_current_active_user)):
-    """Get cache statistics."""
+    """
+    Get design pattern cache statistics.
+
+    Returns cache hit/miss counts, memory usage, and TTL configuration.
+    Useful for monitoring cache effectiveness.
+    """
     cache = get_cache()
     stats = await cache.get_stats()
     return {
@@ -613,10 +777,14 @@ async def get_cache_stats(current_user: User = Depends(get_current_active_user))
     }
 
 
-@app.post("/cache/clear")
+@app.post("/cache/clear", tags=["Cache"], summary="Clear design cache")
 async def clear_cache(current_user: User = Depends(get_current_active_user)):
-    """Clear the design pattern cache. Admin only."""
-    # In production, add admin check here
+    """
+    Clear the design pattern cache.
+
+    Use this when you want to force fresh design generation for all patterns.
+    Returns the number of entries that were cleared.
+    """
     cache = get_cache()
     old_stats = await cache.get_stats()
     cleared = await cache.clear()
@@ -630,7 +798,7 @@ async def clear_cache(current_user: User = Depends(get_current_active_user)):
 # Deployment Feedback Endpoints
 # ============================================================================
 
-@app.post("/feedback/deployment")
+@app.post("/feedback/deployment", tags=["Feedback"], summary="Submit deployment feedback")
 async def submit_deployment_feedback(
     feedback: DeploymentFeedback,
     current_user: User = Depends(get_current_active_user)
@@ -638,10 +806,16 @@ async def submit_deployment_feedback(
     """
     Submit feedback about a deployed design.
 
-    Track deployment outcomes to:
-    - Monitor success rates
-    - Identify common issues
-    - Improve design quality over time
+    After deploying a Carlos-generated architecture, provide feedback to help
+    improve future recommendations:
+
+    - **Was it deployed?** Track which designs actually get implemented
+    - **Did it work?** Report success or issues encountered
+    - **Satisfaction rating:** 1-5 star rating
+    - **Issues encountered:** Describe any problems
+
+    This feedback is used to learn from real-world deployments and improve
+    the design generation algorithms.
     """
     print(f"📊 Deployment feedback from {current_user.username} for design {feedback.design_id}")
 
@@ -666,12 +840,17 @@ async def submit_deployment_feedback(
         )
 
 
-@app.get("/feedback/my-feedback")
+@app.get("/feedback/my-feedback", tags=["Feedback"], summary="Get my feedback history")
 async def get_my_feedback(
     current_user: User = Depends(get_current_active_user),
     limit: int = 20
 ):
-    """Get deployment feedback submitted by the current user."""
+    """
+    Get deployment feedback previously submitted by the current user.
+
+    Returns a list of your feedback submissions with deployment outcomes,
+    ratings, and any issues reported.
+    """
     try:
         store = get_feedback_store()
         feedback_list = await store.get_user_feedback(current_user.username, limit=limit)
@@ -688,19 +867,22 @@ async def get_my_feedback(
         )
 
 
-@app.get("/feedback/analytics")
+@app.get("/feedback/analytics", tags=["Feedback"], summary="Get deployment analytics")
 async def get_deployment_analytics(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Get aggregate deployment analytics.
+    Get aggregate deployment analytics across all users.
 
-    Returns:
+    **Metrics included:**
     - Total designs tracked
-    - Deployment rate
-    - Success rate
-    - Average satisfaction rating
+    - Deployment rate (% of designs that were actually deployed)
+    - Success rate (% of deployed designs that succeeded)
+    - Average satisfaction rating (1-5 stars)
     - Common issues encountered
+
+    Use these analytics to understand overall design quality and identify
+    areas for improvement.
     """
     try:
         store = get_feedback_store()
@@ -722,9 +904,14 @@ async def get_deployment_analytics(
 # OAuth Authentication Endpoints
 # ============================================================================
 
-@app.get("/auth/providers")
+@app.get("/auth/providers", tags=["Authentication"], summary="List OAuth providers")
 async def get_auth_providers():
-    """Get available OAuth providers."""
+    """
+    Get available OAuth authentication providers.
+
+    Returns which OAuth providers (Google, GitHub) are configured and available
+    for use. Use this to conditionally show OAuth login buttons in the UI.
+    """
     return {
         "providers": {
             "google": is_google_enabled(),
@@ -733,9 +920,16 @@ async def get_auth_providers():
     }
 
 
-@app.get("/auth/google")
+@app.get("/auth/google", tags=["Authentication"], summary="Login with Google")
 async def google_login(request: Request):
-    """Initiate Google OAuth login."""
+    """
+    Initiate Google OAuth login flow.
+
+    Redirects the user to Google's authentication page. After successful
+    authentication, the user is redirected back with a JWT token.
+
+    **Note:** This endpoint redirects - do not call via AJAX.
+    """
     if not is_google_enabled():
         raise HTTPException(
             status_code=501,
@@ -746,9 +940,9 @@ async def google_login(request: Request):
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
-@app.get("/auth/google/callback", name="google_callback")
+@app.get("/auth/google/callback", name="google_callback", tags=["Authentication"], include_in_schema=False)
 async def google_callback(request: Request):
-    """Handle Google OAuth callback."""
+    """Handle Google OAuth callback (internal - not for direct use)."""
     if not is_google_enabled():
         raise HTTPException(
             status_code=501,
@@ -791,9 +985,16 @@ async def google_callback(request: Request):
         )
 
 
-@app.get("/auth/github")
+@app.get("/auth/github", tags=["Authentication"], summary="Login with GitHub")
 async def github_login(request: Request):
-    """Initiate GitHub OAuth login."""
+    """
+    Initiate GitHub OAuth login flow.
+
+    Redirects the user to GitHub's authentication page. After successful
+    authentication, the user is redirected back with a JWT token.
+
+    **Note:** This endpoint redirects - do not call via AJAX.
+    """
     if not is_github_enabled():
         raise HTTPException(
             status_code=501,
@@ -804,9 +1005,9 @@ async def github_login(request: Request):
     return await oauth.github.authorize_redirect(request, redirect_uri)
 
 
-@app.get("/auth/github/callback", name="github_callback")
+@app.get("/auth/github/callback", name="github_callback", tags=["Authentication"], include_in_schema=False)
 async def github_callback(request: Request):
-    """Handle GitHub OAuth callback."""
+    """Handle GitHub OAuth callback (internal - not for direct use)."""
     if not is_github_enabled():
         raise HTTPException(
             status_code=501,
@@ -867,7 +1068,7 @@ async def github_callback(request: Request):
 # Admin Endpoints
 # ============================================================================
 
-@app.get("/admin/audit")
+@app.get("/admin/audit", tags=["Admin"], summary="Query audit logs")
 async def get_audit_logs(
     username: str = None,
     action_prefix: str = None,
@@ -876,7 +1077,26 @@ async def get_audit_logs(
     offset: int = 0,
     current_user: User = Depends(require_admin)
 ):
-    """Query audit logs. Admin only."""
+    """
+    Query audit logs with optional filtering. **Admin only.**
+
+    **Filter parameters:**
+    - `username`: Filter by specific user
+    - `action_prefix`: Filter by action category (e.g., `auth.`, `design.`, `admin.`)
+    - `severity`: Filter by severity level (`info`, `warning`, `error`, `critical`)
+
+    **Pagination:**
+    - `limit`: Max records to return (default 50, max 1000)
+    - `offset`: Skip first N records
+
+    **Action categories:**
+    - `auth.*`: Authentication events (login, logout, register)
+    - `design.*`: Design generation events
+    - `document.*`: Document upload/processing events
+    - `feedback.*`: Feedback submissions
+    - `admin.*`: Administrative actions
+    - `cache.*`: Cache operations
+    """
     try:
         store = get_audit_store()
 
@@ -919,12 +1139,25 @@ async def get_audit_logs(
         )
 
 
-@app.get("/admin/audit/stats")
+@app.get("/admin/audit/stats", tags=["Admin"], summary="Get audit statistics")
 async def get_audit_stats(
     days: int = 30,
     current_user: User = Depends(require_admin)
 ):
-    """Get audit statistics. Admin only."""
+    """
+    Get aggregate audit statistics for the dashboard. **Admin only.**
+
+    **Parameters:**
+    - `days`: Time period to analyze (default 30 days)
+
+    **Returns:**
+    - Total events count
+    - Unique users count
+    - Error count
+    - Events grouped by action category
+    - Events grouped by severity level
+    - Storage backend type (cosmosdb or in-memory)
+    """
     try:
         store = get_audit_store()
         stats = await store.get_stats(days=days)
@@ -941,7 +1174,7 @@ async def get_audit_stats(
         )
 
 
-@app.get("/admin/audit/export")
+@app.get("/admin/audit/export", tags=["Admin"], summary="Export audit logs")
 async def export_audit_logs(
     format: str = "json",
     username: str = None,
@@ -949,7 +1182,17 @@ async def export_audit_logs(
     limit: int = 1000,
     current_user: User = Depends(require_admin)
 ):
-    """Export audit logs in JSON or CSV format. Admin only."""
+    """
+    Export audit logs as a downloadable file. **Admin only.**
+
+    **Parameters:**
+    - `format`: Output format - `json` or `csv` (default: json)
+    - `username`: Filter by specific user
+    - `action_prefix`: Filter by action category
+    - `limit`: Max records to export (default 1000, max 10000)
+
+    Returns a downloadable file with Content-Disposition header set.
+    """
     try:
         store = get_audit_store()
 
@@ -1023,9 +1266,13 @@ async def export_audit_logs(
         )
 
 
-@app.get("/admin/users")
+@app.get("/admin/users", tags=["Admin"], summary="List all users")
 async def list_users(current_user: User = Depends(require_admin)):
-    """List all users. Admin only."""
+    """
+    List all registered users. **Admin only.**
+
+    Returns user details including username, email, admin status, and account status.
+    """
     users = get_all_users()
     return {
         "users": [
@@ -1041,12 +1288,17 @@ async def list_users(current_user: User = Depends(require_admin)):
     }
 
 
-@app.post("/admin/users/{username}/promote")
+@app.post("/admin/users/{username}/promote", tags=["Admin"], summary="Promote user to admin")
 async def promote_user(
     username: str,
     current_user: User = Depends(require_admin)
 ):
-    """Promote a user to admin. Admin only."""
+    """
+    Grant admin privileges to a user. **Admin only.**
+
+    Admins can access the admin dashboard, view audit logs, and manage other users.
+    You cannot modify your own admin status.
+    """
     if username == current_user.username:
         raise HTTPException(
             status_code=400,
@@ -1063,12 +1315,17 @@ async def promote_user(
     return {"message": f"User {username} promoted to admin", "user": user.model_dump()}
 
 
-@app.post("/admin/users/{username}/demote")
+@app.post("/admin/users/{username}/demote", tags=["Admin"], summary="Remove admin privileges")
 async def demote_user(
     username: str,
     current_user: User = Depends(require_admin)
 ):
-    """Remove admin status from a user. Admin only."""
+    """
+    Remove admin privileges from a user. **Admin only.**
+
+    The user will retain their account but lose access to admin features.
+    You cannot modify your own admin status.
+    """
     if username == current_user.username:
         raise HTTPException(
             status_code=400,
@@ -1085,12 +1342,17 @@ async def demote_user(
     return {"message": f"User {username} demoted from admin", "user": user.model_dump()}
 
 
-@app.post("/admin/users/{username}/enable")
+@app.post("/admin/users/{username}/enable", tags=["Admin"], summary="Enable user account")
 async def enable_user(
     username: str,
     current_user: User = Depends(require_admin)
 ):
-    """Enable a user account. Admin only."""
+    """
+    Re-enable a disabled user account. **Admin only.**
+
+    The user will be able to log in and use the application again.
+    You cannot modify your own account status.
+    """
     if username == current_user.username:
         raise HTTPException(
             status_code=400,
@@ -1107,12 +1369,18 @@ async def enable_user(
     return {"message": f"User {username} enabled", "user": user.model_dump()}
 
 
-@app.post("/admin/users/{username}/disable")
+@app.post("/admin/users/{username}/disable", tags=["Admin"], summary="Disable user account")
 async def disable_user(
     username: str,
     current_user: User = Depends(require_admin)
 ):
-    """Disable a user account. Admin only."""
+    """
+    Disable a user account. **Admin only.**
+
+    Disabled users cannot log in or access any endpoints.
+    Use this to temporarily suspend accounts without deleting them.
+    You cannot modify your own account status.
+    """
     if username == current_user.username:
         raise HTTPException(
             status_code=400,
