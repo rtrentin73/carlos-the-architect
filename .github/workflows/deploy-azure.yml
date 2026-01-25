@@ -84,35 +84,45 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get Sensitive Values from Azure
+      - name: Get Sensitive Values
         id: azure-secrets
         run: |
+          # Use GitHub secrets if available, otherwise fetch from Azure CLI
+          REDIS_KEY="${{ secrets.REDIS_PASSWORD }}"
+          COSMOSDB_KEY="${{ secrets.COSMOSDB_KEY }}"
+          DOCINT_KEY="${{ secrets.DOCUMENT_INTELLIGENCE_KEY }}"
+
           RESOURCE_GROUP="${{ steps.tf-outputs.outputs.resource_group }}"
 
-          # Get Redis access key directly from Azure
-          REDIS_NAME=$(echo "${{ steps.tf-outputs.outputs.redis_hostname }}" | cut -d'.' -f1)
-          REDIS_KEY=$(az redis list-keys --resource-group "$RESOURCE_GROUP" --name "$REDIS_NAME" --query primaryKey -o tsv)
-
-          # Get Cosmos DB key directly from Azure
-          COSMOS_NAME=$(echo "${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}" | sed 's|https://||' | cut -d'.' -f1)
-          COSMOSDB_KEY=$(az cosmosdb keys list --resource-group "$RESOURCE_GROUP" --name "$COSMOS_NAME" --query primaryMasterKey -o tsv)
-
-          # Get Document Intelligence key directly from Azure
-          DOCINT_ENDPOINT="${{ steps.tf-outputs.outputs.document_intelligence_endpoint }}"
-          if [ -n "$DOCINT_ENDPOINT" ] && [ "$DOCINT_ENDPOINT" != "null" ]; then
-            DOCINT_NAME=$(echo "$DOCINT_ENDPOINT" | sed 's|https://||' | cut -d'.' -f1)
-            DOCINT_KEY=$(az cognitiveservices account keys list --resource-group "$RESOURCE_GROUP" --name "$DOCINT_NAME" --query key1 -o tsv 2>/dev/null || echo "")
-          else
-            DOCINT_KEY=""
+          # Fallback to Azure CLI if GitHub secrets are empty
+          if [ -z "$REDIS_KEY" ]; then
+            echo "Fetching Redis key from Azure..."
+            REDIS_NAME=$(echo "${{ steps.tf-outputs.outputs.redis_hostname }}" | cut -d'.' -f1)
+            REDIS_KEY=$(az redis list-keys --resource-group "$RESOURCE_GROUP" --name "$REDIS_NAME" --query primaryKey -o tsv)
           fi
 
-          # Validate
+          if [ -z "$COSMOSDB_KEY" ]; then
+            echo "Fetching Cosmos DB key from Azure..."
+            COSMOS_NAME=$(echo "${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}" | sed 's|https://||' | cut -d'.' -f1)
+            COSMOSDB_KEY=$(az cosmosdb keys list --resource-group "$RESOURCE_GROUP" --name "$COSMOS_NAME" --query primaryMasterKey -o tsv)
+          fi
+
+          if [ -z "$DOCINT_KEY" ]; then
+            echo "Fetching Document Intelligence key from Azure..."
+            DOCINT_ENDPOINT="${{ steps.tf-outputs.outputs.document_intelligence_endpoint }}"
+            if [ -n "$DOCINT_ENDPOINT" ] && [ "$DOCINT_ENDPOINT" != "null" ]; then
+              DOCINT_NAME=$(echo "$DOCINT_ENDPOINT" | sed 's|https://||' | cut -d'.' -f1)
+              DOCINT_KEY=$(az cognitiveservices account keys list --resource-group "$RESOURCE_GROUP" --name "$DOCINT_NAME" --query key1 -o tsv 2>/dev/null || echo "")
+            fi
+          fi
+
+          # Validate required secrets
           if [ -z "$REDIS_KEY" ]; then
-            echo "ERROR: Failed to get Redis key from Azure"
+            echo "ERROR: Redis key not found in secrets or Azure"
             exit 1
           fi
           if [ -z "$COSMOSDB_KEY" ]; then
-            echo "ERROR: Failed to get Cosmos DB key from Azure"
+            echo "ERROR: Cosmos DB key not found in secrets or Azure"
             exit 1
           fi
 
