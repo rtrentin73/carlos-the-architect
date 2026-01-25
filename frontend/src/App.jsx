@@ -523,7 +523,14 @@ export default function App() {
     setTokenCounts({
       carlos: 0,
       ronei_design: 0,
-      terraform_coder: 0
+      terraform_coder: 0,
+      requirements_gathering: 0,
+      refine_requirements: 0,
+      security: 0,
+      cost: 0,
+      reliability: 0,
+      audit: 0,
+      recommender: 0
     });
     setIsDesigning(true);
     setDesignStartTime(Date.now());
