@@ -83,6 +83,25 @@ spec:
               value: "carlos-feedback"
             - name: COSMOSDB_CONTAINER
               value: "deployments"
+            - name: COSMOSDB_USERS_CONTAINER
+              value: "users"
+            - name: COSMOSDB_AUDIT_CONTAINER
+              value: "audit_logs"
+            - name: COSMOSDB_HISTORY_CONTAINER
+              value: "design_history"
+            # Azure AI Document Intelligence (optional - enables OCR for images and scanned PDFs)
+            - name: AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: carlos-secrets
+                  key: azure-document-intelligence-endpoint
+                  optional: true
+            - name: AZURE_DOCUMENT_INTELLIGENCE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: carlos-secrets
+                  key: azure-document-intelligence-key
+                  optional: true
           resources:
             requests:
               memory: "256Mi"

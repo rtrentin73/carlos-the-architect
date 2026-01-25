@@ -350,9 +350,18 @@ async def upload_document(
     """
     Upload a document for asynchronous text extraction.
 
-    **Supported formats:** PDF, DOCX, TXT, MD, XLSX
+    **Supported formats:** PDF, DOCX, TXT, MD, XLSX, PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP
 
     **Size limit:** 50MB
+
+    **Azure AI Document Intelligence (optional):**
+    - **Images:** Required for PNG, JPG, etc. - provides OCR text extraction
+    - **PDFs:** Enhanced extraction for scanned PDFs and embedded images/diagrams
+    - Falls back to standard text extraction for PDFs if not configured
+
+    **Without Azure AI Document Intelligence:**
+    - Image uploads will return an error
+    - PDFs use pypdf (text-based PDFs only, no OCR for scanned pages)
 
     Documents are processed in the background. After uploading:
     1. You receive a `task_id` immediately

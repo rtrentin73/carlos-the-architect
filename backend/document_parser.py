@@ -10,12 +10,98 @@ import openpyxl
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB (increased for async processing)
 
+# Supported image extensions for Azure AI Document Intelligence
+IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp"}
+
+
+def _is_azure_document_intelligence_configured() -> bool:
+    """Check if Azure AI Document Intelligence is configured."""
+    endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+    key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+    return bool(endpoint and key)
+
+
+def _extract_with_document_intelligence(content: bytes, filename: str = "") -> str:
+    """
+    Extract text from document using Azure AI Document Intelligence.
+
+    Uses the prebuilt-read model for OCR (Optical Character Recognition).
+    Works with images, scanned PDFs, and PDFs with embedded images.
+
+    Args:
+        content: Document file bytes (image or PDF)
+        filename: Original filename for logging
+
+    Returns:
+        Extracted text from the document
+
+    Raises:
+        ValueError: If Azure AI Document Intelligence is not configured or extraction fails
+    """
+    endpoint = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+    key = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
+
+    if not endpoint or not key:
+        raise ValueError(
+            "Azure AI Document Intelligence is not configured. "
+            "Set AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY environment variables."
+        )
+
+    try:
+        from azure.ai.documentintelligence import DocumentIntelligenceClient
+        from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
+        from azure.core.credentials import AzureKeyCredential
+
+        # Create client
+        client = DocumentIntelligenceClient(
+            endpoint=endpoint,
+            credential=AzureKeyCredential(key)
+        )
+
+        # Analyze document using prebuilt-read model (best for OCR)
+        poller = client.begin_analyze_document(
+            model_id="prebuilt-read",
+            analyze_request=AnalyzeDocumentRequest(bytes_source=content),
+        )
+
+        result = poller.result()
+
+        # Extract text from all pages
+        text_parts = []
+        if result.content:
+            text_parts.append(result.content)
+
+        extracted_text = "\n".join(text_parts)
+
+        if not extracted_text.strip():
+            raise ValueError("No text could be extracted from the document")
+
+        print(f"  📄 Azure AI extracted {len(extracted_text)} characters from {filename}")
+        return extracted_text
+
+    except ImportError:
+        raise ValueError(
+            "azure-ai-documentintelligence package is not installed. "
+            "Run: pip install azure-ai-documentintelligence"
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to extract text with Azure AI Document Intelligence: {str(e)}")
+
 
 async def extract_text_from_file(file: UploadFile) -> str:
     """
     Extract text content from uploaded file.
 
-    Supports: PDF, DOCX, TXT, MD, XLSX, and other text-based formats.
+    Supports: PDF, DOCX, TXT, MD, XLSX, images (PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP).
+
+    When Azure AI Document Intelligence is configured:
+    - Images: OCR extracts text from images
+    - PDFs: Enhanced extraction handles scanned PDFs and embedded images
+    - Falls back to pypdf for PDFs if Azure AI fails
+
+    When Azure AI Document Intelligence is NOT configured:
+    - Images: Will return an error (requires Azure AI)
+    - PDFs: Uses pypdf (text-based PDFs only, no OCR for scanned pages)
 
     Args:
         file: Uploaded file from FastAPI
@@ -47,13 +133,22 @@ async def extract_text_from_file(file: UploadFile) -> str:
     try:
         # Extract text based on file type
         if extension == "pdf":
-            text = _extract_from_pdf(content)
+            text = _extract_from_pdf(content, filename)
         elif extension in ["docx", "doc"]:
             text = _extract_from_docx(content)
         elif extension in ["xlsx", "xls"]:
             text = _extract_from_excel(content)
         elif extension in ["txt", "md", "markdown", "text"]:
             text = _extract_from_text(content)
+        elif extension in IMAGE_EXTENSIONS:
+            # Image files require Azure AI Document Intelligence
+            if not _is_azure_document_intelligence_configured():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Image upload requires Azure AI Document Intelligence to be configured. "
+                           "Please configure AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY."
+                )
+            text = _extract_with_document_intelligence(content, filename)
         else:
             # Try to read as plain text
             text = _extract_from_text(content)
@@ -76,8 +171,30 @@ async def extract_text_from_file(file: UploadFile) -> str:
         )
 
 
-def _extract_from_pdf(content: bytes) -> str:
-    """Extract text from PDF file."""
+def _extract_from_pdf(content: bytes, filename: str = "") -> str:
+    """
+    Extract text from PDF file.
+
+    If Azure AI Document Intelligence is configured, uses it for better extraction
+    of scanned PDFs and embedded images. Falls back to pypdf otherwise.
+
+    Args:
+        content: PDF file bytes
+        filename: Original filename for logging
+
+    Returns:
+        Extracted text from the PDF
+    """
+    # Try Azure AI Document Intelligence first if configured
+    # This handles scanned PDFs and embedded images better than pypdf
+    if _is_azure_document_intelligence_configured():
+        try:
+            return _extract_with_document_intelligence(content, filename)
+        except Exception as e:
+            print(f"  ⚠️ Azure AI Document Intelligence failed, falling back to pypdf: {e}")
+            # Fall through to pypdf extraction
+
+    # Fall back to pypdf for text-based PDFs
     pdf_file = io.BytesIO(content)
     reader = PdfReader(pdf_file)
 
@@ -143,6 +260,17 @@ def extract_text_from_path(file_path: str) -> str:
     """
     Extract text content from a file path (for async background processing).
 
+    Supports: PDF, DOCX, TXT, MD, XLSX, images (PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP).
+
+    When Azure AI Document Intelligence is configured:
+    - Images: OCR extracts text from images
+    - PDFs: Enhanced extraction handles scanned PDFs and embedded images
+    - Falls back to pypdf for PDFs if Azure AI fails
+
+    When Azure AI Document Intelligence is NOT configured:
+    - Images: Will return an error (requires Azure AI)
+    - PDFs: Uses pypdf (text-based PDFs only, no OCR for scanned pages)
+
     Args:
         file_path: Absolute path to the file
 
@@ -162,8 +290,9 @@ def extract_text_from_path(file_path: str) -> str:
     if file_size > MAX_FILE_SIZE:
         raise ValueError(f"File too large. Maximum size is {MAX_FILE_SIZE / 1024 / 1024}MB")
 
-    # Get file extension
+    # Get file extension and filename
     extension = file_path.lower().split(".")[-1] if "." in file_path else ""
+    filename = os.path.basename(file_path)
 
     # Read file content
     with open(file_path, "rb") as f:
@@ -172,13 +301,21 @@ def extract_text_from_path(file_path: str) -> str:
     try:
         # Extract text based on file type
         if extension == "pdf":
-            text = _extract_from_pdf(content)
+            text = _extract_from_pdf(content, filename)
         elif extension in ["docx", "doc"]:
             text = _extract_from_docx(content)
         elif extension in ["xlsx", "xls"]:
             text = _extract_from_excel(content)
         elif extension in ["txt", "md", "markdown", "text"]:
             text = _extract_from_text(content)
+        elif extension in IMAGE_EXTENSIONS:
+            # Image files require Azure AI Document Intelligence
+            if not _is_azure_document_intelligence_configured():
+                raise ValueError(
+                    "Image upload requires Azure AI Document Intelligence to be configured. "
+                    "Please configure AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY."
+                )
+            text = _extract_with_document_intelligence(content, filename)
         else:
             # Try to read as plain text
             text = _extract_from_text(content)
