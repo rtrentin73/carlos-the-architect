@@ -7,6 +7,8 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 import os
 
+from user_store import get_user_store
+
 # Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "carlos-architect-secret-key-change-in-production")
 ALGORITHM = "HS256"
@@ -49,70 +51,85 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
-# In-memory user storage (replace with database in production)
-users_db: dict[str, dict] = {}
-
-
-def seed_admin_user():
+async def seed_admin_user():
     """Seed the default admin user on startup."""
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
     admin_password = os.getenv("ADMIN_PASSWORD", "carlos-admin-2024")
     admin_email = os.getenv("ADMIN_EMAIL", "admin@carlos.ai")
 
-    if admin_username not in users_db:
-        hashed_password = get_password_hash(admin_password)
-        users_db[admin_username] = {
-            "username": admin_username,
-            "email": admin_email,
-            "hashed_password": hashed_password,
-            "disabled": False,
-            "is_admin": True,
-            "auth_provider": "local",
-            "oauth_id": None,
-            "avatar_url": None,
-        }
-        print(f"  Seeded admin user: {admin_username}")
+    store = get_user_store()
+
+    # Check if admin already exists
+    existing = await store.get_user(admin_username)
+    if existing:
+        return admin_username
+
+    # Create admin user
+    hashed_password = get_password_hash(admin_password)
+    user_dict = {
+        "username": admin_username,
+        "email": admin_email,
+        "hashed_password": hashed_password,
+        "disabled": False,
+        "is_admin": True,
+        "auth_provider": "local",
+        "oauth_id": None,
+        "avatar_url": None,
+    }
+    await store.create_user(user_dict)
+    print(f"  Seeded admin user: {admin_username}")
     return admin_username
 
 
-def get_all_users() -> list[User]:
+async def get_all_users() -> list[User]:
     """Get all users (admin only)."""
+    store = get_user_store()
+    users = await store.get_all_users()
     return [
         User(
             username=u["username"],
             email=u.get("email"),
             disabled=u.get("disabled", False),
             is_admin=u.get("is_admin", False),
+            auth_provider=u.get("auth_provider", "local"),
+            oauth_id=u.get("oauth_id"),
+            avatar_url=u.get("avatar_url"),
         )
-        for u in users_db.values()
+        for u in users
     ]
 
 
-def set_user_admin(username: str, is_admin: bool) -> Optional[User]:
+async def set_user_admin(username: str, is_admin: bool) -> Optional[User]:
     """Promote or demote a user's admin status."""
-    if username not in users_db:
+    store = get_user_store()
+    updated = await store.update_user(username, {"is_admin": is_admin})
+    if not updated:
         return None
-    users_db[username]["is_admin"] = is_admin
-    user_dict = users_db[username]
     return User(
-        username=user_dict["username"],
-        email=user_dict.get("email"),
-        disabled=user_dict.get("disabled", False),
-        is_admin=user_dict.get("is_admin", False),
+        username=updated["username"],
+        email=updated.get("email"),
+        disabled=updated.get("disabled", False),
+        is_admin=updated.get("is_admin", False),
+        auth_provider=updated.get("auth_provider", "local"),
+        oauth_id=updated.get("oauth_id"),
+        avatar_url=updated.get("avatar_url"),
     )
 
 
-def set_user_disabled(username: str, disabled: bool) -> Optional[User]:
+async def set_user_disabled(username: str, disabled: bool) -> Optional[User]:
     """Enable or disable a user account."""
-    if username not in users_db:
+    store = get_user_store()
+    updated = await store.update_user(username, {"disabled": disabled})
+    if not updated:
         return None
-    users_db[username]["disabled"] = disabled
-    user_dict = users_db[username]
     return User(
-        username=user_dict["username"],
-        email=user_dict.get("email"),
-        disabled=user_dict.get("disabled", False),
-        is_admin=user_dict.get("is_admin", False),
+        username=updated["username"],
+        email=updated.get("email"),
+        disabled=updated.get("disabled", False),
+        is_admin=updated.get("is_admin", False),
+        auth_provider=updated.get("auth_provider", "local"),
+        oauth_id=updated.get("oauth_id"),
+        avatar_url=updated.get("avatar_url"),
     )
 
 
@@ -124,15 +141,16 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def get_user(username: str) -> Optional[UserInDB]:
-    if username in users_db:
-        user_dict = users_db[username]
+async def get_user(username: str) -> Optional[UserInDB]:
+    store = get_user_store()
+    user_dict = await store.get_user(username)
+    if user_dict:
         return UserInDB(**user_dict)
     return None
 
 
-def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
-    user = get_user(username)
+async def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
+    user = await get_user(username)
     if not user:
         return None
     # OAuth users cannot login with password
@@ -156,8 +174,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
-def create_user(user_create: UserCreate) -> User:
-    if user_create.username in users_db:
+async def create_user(user_create: UserCreate) -> User:
+    store = get_user_store()
+
+    if await store.username_exists(user_create.username):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username already registered"
@@ -174,19 +194,20 @@ def create_user(user_create: UserCreate) -> User:
         "oauth_id": None,
         "avatar_url": None,
     }
-    users_db[user_create.username] = user_dict
+    await store.create_user(user_dict)
     return User(username=user_create.username, email=user_create.email, is_admin=False)
 
 
-def get_user_by_oauth(provider: str, oauth_id: str) -> Optional[UserInDB]:
+async def get_user_by_oauth(provider: str, oauth_id: str) -> Optional[UserInDB]:
     """Find a user by OAuth provider and ID."""
-    for username, user_dict in users_db.items():
-        if user_dict.get("auth_provider") == provider and user_dict.get("oauth_id") == oauth_id:
-            return UserInDB(**user_dict)
+    store = get_user_store()
+    user_dict = await store.get_user_by_oauth(provider, oauth_id)
+    if user_dict:
+        return UserInDB(**user_dict)
     return None
 
 
-def create_oauth_user(
+async def create_oauth_user(
     provider: str,
     oauth_id: str,
     email: str,
@@ -194,10 +215,12 @@ def create_oauth_user(
     avatar_url: Optional[str] = None
 ) -> User:
     """Create a new user from OAuth login."""
+    store = get_user_store()
+
     # Generate unique username if already taken
     base_username = username
     counter = 1
-    while username in users_db:
+    while await store.username_exists(username):
         username = f"{base_username}{counter}"
         counter += 1
 
@@ -211,11 +234,11 @@ def create_oauth_user(
         "oauth_id": oauth_id,
         "avatar_url": avatar_url,
     }
-    users_db[username] = user_dict
+    await store.create_user(user_dict)
     return User(**{k: v for k, v in user_dict.items() if k != "hashed_password"})
 
 
-def get_or_create_oauth_user(
+async def get_or_create_oauth_user(
     provider: str,
     oauth_id: str,
     email: str,
@@ -224,14 +247,14 @@ def get_or_create_oauth_user(
 ) -> User:
     """Get existing OAuth user or create a new one."""
     # Try to find existing user by OAuth ID
-    existing_user = get_user_by_oauth(provider, oauth_id)
+    existing_user = await get_user_by_oauth(provider, oauth_id)
     if existing_user:
         return User(**existing_user.model_dump(exclude={"hashed_password"}))
 
     # Create new OAuth user
     # Use email prefix as username, or name if email not available
     username = email.split("@")[0] if email else name.replace(" ", "").lower()
-    return create_oauth_user(provider, oauth_id, email, username, avatar_url)
+    return await create_oauth_user(provider, oauth_id, email, username, avatar_url)
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
@@ -249,7 +272,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     except JWTError:
         raise credentials_exception
 
-    user = get_user(username=token_data.username)
+    user = await get_user(username=token_data.username)
     if user is None:
         raise credentials_exception
     return user

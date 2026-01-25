@@ -55,10 +55,8 @@ export default function App() {
   const [userAnswers, setUserAnswers] = useState("");
   const [originalRequirements, setOriginalRequirements] = useState("");
   const [blueprintTab, setBlueprintTab] = useState("carlos");
-  const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem("designHistory");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [history, setHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [activityLog, setActivityLog] = useState([]);
   const [agentStatuses, setAgentStatuses] = useState({
     design: 'pending',
@@ -88,6 +86,60 @@ export default function App() {
     const timer = setTimeout(() => setShowSplash(false), 3000);
     return () => clearTimeout(timer);
   }, []);
+
+  // Fetch design history from backend when user is authenticated
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!isAuthenticated || !token) return;
+
+      setHistoryLoading(true);
+      try {
+        const response = await fetch(`${backendBaseUrl}/history`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          // Transform backend data to match frontend format
+          const transformedHistory = (data.designs || []).map(d => ({
+            id: d.id,
+            requirements: d.requirements || "",
+            design: d.architecture || "",
+            roneiDesign: d.ronei_design || "",
+            scenario: d.scenario || "custom",
+            costPerformance: d.cost_performance || "balanced",
+            complianceLevel: d.compliance_level || "standard",
+            reliabilityLevel: d.reliability_level || "normal",
+            strictnessLevel: d.strictness_level || "balanced",
+            auditStatus: d.audit_status || "",
+            auditReport: d.audit_report || "",
+            securityReport: d.security_analysis || "",
+            costReport: d.cost_estimate || "",
+            reliabilityReport: d.reliability_analysis || "",
+            recommendation: d.recommendation || "",
+            terraformCode: d.terraform || "",
+            terraformValidation: d.terraform_validation || "",
+            agentChat: d.agent_chat || "",
+            carlosTokens: d.carlos_tokens || 0,
+            roneiTokens: d.ronei_tokens || 0,
+            totalTokens: d.total_tokens || 0,
+            durationSeconds: d.duration_seconds || 0,
+            timestamp: d.created_at ? new Date(d.created_at).toLocaleString() : "",
+            title: d.title || ""
+          }));
+          setHistory(transformedHistory);
+        }
+      } catch (error) {
+        console.error("Failed to fetch design history:", error);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+
+    fetchHistory();
+  }, [isAuthenticated, token, backendBaseUrl]);
 
   const handleStreamEvent = (event) => {
     const agentDescriptions = {
@@ -332,9 +384,49 @@ export default function App() {
           durationSeconds,
           timestamp: new Date().toLocaleString()
         };
+
+        // Save to backend API (fire and forget, update local state immediately)
         const updatedHistory = [newEntry, ...history];
         setHistory(updatedHistory);
-        localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
+
+        // Async save to backend
+        fetch(`${backendBaseUrl}/history`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            id: designId,
+            requirements: input,
+            scenario,
+            cost_performance: costPerformance,
+            compliance_level: complianceLevel,
+            reliability_level: reliabilityLevel,
+            strictness_level: strictnessLevel,
+            architecture: summary.design,
+            ronei_design: summary.ronei_design || "",
+            audit_status: summary.audit_status || "",
+            audit_report: summary.audit_report || "",
+            security_analysis: summary.security_report || "",
+            cost_estimate: summary.cost_report || "",
+            reliability_analysis: summary.reliability_report || "",
+            recommendation: summary.recommendation || "",
+            terraform: summary.terraform_code || "",
+            terraform_validation: summary.terraform_validation || "",
+            agent_chat: summary.agent_chat || "",
+            carlos_tokens: tokenCounts.carlos,
+            ronei_tokens: tokenCounts.ronei_design,
+            total_tokens: totalTokens,
+            duration_seconds: durationSeconds
+          })
+        }).then(response => {
+          if (!response.ok) {
+            console.error("Failed to save design to backend");
+          }
+        }).catch(error => {
+          console.error("Error saving design to backend:", error);
+        });
         setAgentChat(summary.agent_chat || "");
         // Set terraform validation from summary (in case streaming was missed)
         if (summary.terraform_validation) {
@@ -365,9 +457,23 @@ export default function App() {
   const deleteFromHistory = (entryId, e) => {
     e.stopPropagation(); // Prevent triggering the parent onClick
     if (window.confirm('Are you sure you want to delete this design from history?')) {
+      // Update local state immediately
       const updatedHistory = history.filter(entry => entry.id !== entryId);
       setHistory(updatedHistory);
-      localStorage.setItem("designHistory", JSON.stringify(updatedHistory));
+
+      // Delete from backend
+      fetch(`${backendBaseUrl}/history/${entryId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }).then(response => {
+        if (!response.ok) {
+          console.error("Failed to delete design from backend");
+        }
+      }).catch(error => {
+        console.error("Error deleting design from backend:", error);
+      });
     }
   };
 

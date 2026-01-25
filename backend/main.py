@@ -19,6 +19,15 @@ from feedback import (
     initialize_feedback_store,
     close_feedback_store,
 )
+from user_store import (
+    initialize_user_store,
+    close_user_store,
+)
+from design_history_store import (
+    initialize_design_history_store,
+    close_design_history_store,
+    get_design_history_store,
+)
 from audit import (
     AuditRecord,
     AuditAction,
@@ -91,8 +100,14 @@ async def lifespan(app: FastAPI):
     # Initialize audit store (Cosmos DB if available, otherwise in-memory)
     await initialize_audit_store()
 
+    # Initialize user store (Cosmos DB if available, otherwise in-memory)
+    await initialize_user_store()
+
+    # Initialize design history store (Cosmos DB if available, otherwise in-memory)
+    await initialize_design_history_store()
+
     # Seed default admin user
-    seed_admin_user()
+    await seed_admin_user()
 
     print("✅ Backend ready to serve requests")
 
@@ -114,6 +129,12 @@ async def lifespan(app: FastAPI):
 
     # Close audit store
     await close_audit_store()
+
+    # Close user store
+    await close_user_store()
+
+    # Close design history store
+    await close_design_history_store()
 
     print("✅ Shutdown complete")
 
@@ -143,6 +164,10 @@ tags_metadata = [
     {
         "name": "Cache",
         "description": "Design pattern cache management for faster responses on common architecture patterns.",
+    },
+    {
+        "name": "History",
+        "description": "Design history management for saving and retrieving past architecture designs.",
     },
     {
         "name": "Admin",
@@ -239,7 +264,7 @@ async def register(user_data: UserCreate):
 
     Returns the created user object. After registration, use `/auth/login` to obtain an access token.
     """
-    return create_user(user_data)
+    return await create_user(user_data)
 
 
 @app.post("/auth/login", response_model=Token, tags=["Authentication"], summary="Login")
@@ -255,7 +280,7 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
 
     Tokens expire after 24 hours. Rate limited to 20 attempts per minute.
     """
-    user = authenticate_user(form_data.username, form_data.password)
+    user = await authenticate_user(form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -799,6 +824,167 @@ async def clear_cache(current_user: User = Depends(get_current_active_user)):
 
 
 # ============================================================================
+# Design History Endpoints
+# ============================================================================
+
+@app.post("/history", tags=["History"], summary="Save design to history")
+async def save_design_to_history(
+    design: dict,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Save a design to the user's design history.
+
+    **Request body:**
+    ```json
+    {
+      "requirements": "Original requirements text",
+      "cloud_provider": "azure|aws|gcp|multi_cloud",
+      "environment": "dev|staging|prod",
+      "architecture": "Generated architecture document",
+      "terraform": "Generated Terraform code",
+      "diagram_svg": "Architecture diagram SVG",
+      "cost_estimate": "Cost estimation report",
+      "security_analysis": "Security analysis report",
+      "reliability_analysis": "Reliability analysis report",
+      "title": "Optional custom title"
+    }
+    ```
+
+    Returns the saved design with a unique ID and timestamp.
+    """
+    try:
+        store = get_design_history_store()
+        saved = await store.save_design(current_user.username, design)
+        return {
+            "status": "success",
+            "design": saved,
+            "message": "Design saved to history"
+        }
+    except Exception as e:
+        print(f"❌ Error saving design to history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save design: {str(e)}"
+        )
+
+
+@app.get("/history", tags=["History"], summary="Get design history")
+async def get_design_history(
+    current_user: User = Depends(get_current_active_user),
+    limit: int = 50
+):
+    """
+    Get the user's design history.
+
+    Returns a list of saved designs ordered by creation date (newest first).
+
+    **Parameters:**
+    - `limit`: Maximum number of designs to return (default 50)
+    """
+    try:
+        store = get_design_history_store()
+        designs = await store.get_user_designs(current_user.username, limit=limit)
+        return {
+            "designs": designs,
+            "count": len(designs),
+            "persistent": store.is_connected,
+        }
+    except Exception as e:
+        print(f"❌ Error getting design history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve design history: {str(e)}"
+        )
+
+
+@app.get("/history/{design_id}", tags=["History"], summary="Get specific design")
+async def get_design_by_id(
+    design_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get a specific design from history by its ID.
+
+    Returns the full design document including all reports and generated code.
+    """
+    try:
+        store = get_design_history_store()
+        design = await store.get_design(design_id, current_user.username)
+        if not design:
+            raise HTTPException(
+                status_code=404,
+                detail="Design not found"
+            )
+        return {"design": design}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting design {design_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve design: {str(e)}"
+        )
+
+
+@app.delete("/history/{design_id}", tags=["History"], summary="Delete design from history")
+async def delete_design_from_history(
+    design_id: str,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Delete a specific design from history.
+
+    The design must belong to the current user.
+    """
+    try:
+        store = get_design_history_store()
+        deleted = await store.delete_design(design_id, current_user.username)
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail="Design not found"
+            )
+        return {
+            "status": "success",
+            "message": f"Design {design_id} deleted"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error deleting design {design_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete design: {str(e)}"
+        )
+
+
+@app.delete("/history", tags=["History"], summary="Clear design history")
+async def clear_design_history(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Clear all designs from the user's history.
+
+    This action cannot be undone.
+    """
+    try:
+        store = get_design_history_store()
+        count = await store.clear_user_history(current_user.username)
+        return {
+            "status": "success",
+            "message": f"Cleared {count} designs from history",
+            "deleted_count": count
+        }
+    except Exception as e:
+        print(f"❌ Error clearing design history: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clear history: {str(e)}"
+        )
+
+
+# ============================================================================
 # Deployment Feedback Endpoints
 # ============================================================================
 
@@ -963,7 +1149,7 @@ async def google_callback(request: Request):
             )
 
         # Get or create user
-        user = get_or_create_oauth_user(
+        user = await get_or_create_oauth_user(
             provider="google",
             oauth_id=user_info.get("sub"),
             email=user_info.get("email", ""),
@@ -1042,7 +1228,7 @@ async def github_callback(request: Request):
                     break
 
         # Get or create user
-        user = get_or_create_oauth_user(
+        user = await get_or_create_oauth_user(
             provider="github",
             oauth_id=str(user_info.get("id")),
             email=email or "",
@@ -1277,7 +1463,7 @@ async def list_users(current_user: User = Depends(require_admin)):
 
     Returns user details including username, email, admin status, and account status.
     """
-    users = get_all_users()
+    users = await get_all_users()
     return {
         "users": [
             {
@@ -1309,7 +1495,7 @@ async def promote_user(
             detail="Cannot modify your own admin status"
         )
 
-    user = set_user_admin(username, True)
+    user = await set_user_admin(username, True)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1336,7 +1522,7 @@ async def demote_user(
             detail="Cannot modify your own admin status"
         )
 
-    user = set_user_admin(username, False)
+    user = await set_user_admin(username, False)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1363,7 +1549,7 @@ async def enable_user(
             detail="Cannot modify your own account status"
         )
 
-    user = set_user_disabled(username, False)
+    user = await set_user_disabled(username, False)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -1391,7 +1577,7 @@ async def disable_user(
             detail="Cannot modify your own account status"
         )
 
-    user = set_user_disabled(username, True)
+    user = await set_user_disabled(username, True)
     if not user:
         raise HTTPException(
             status_code=404,
