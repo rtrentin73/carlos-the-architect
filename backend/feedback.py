@@ -254,7 +254,8 @@ class CosmosDBFeedbackStore:
             results = []
             async for item in self._container.query_items(
                 query=query,
-                parameters=parameters
+                parameters=parameters,
+                enable_cross_partition_query=True
             ):
                 results.append(StoredFeedback(**item))
 
@@ -276,22 +277,34 @@ class CosmosDBFeedbackStore:
             return self._empty_analytics()
 
         try:
+            # Note: All aggregate queries need enable_cross_partition_query=True
+            # because the container is partitioned by 'username'
+
             # Get total count
             total_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'deployment_feedback'"
             total_feedback = 0
-            async for item in self._container.query_items(query=total_query):
+            async for item in self._container.query_items(
+                query=total_query,
+                enable_cross_partition_query=True
+            ):
                 total_feedback = item
 
             # Get deployed count
             deployed_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'deployment_feedback' AND c.deployed = true"
             deployed_count = 0
-            async for item in self._container.query_items(query=deployed_query):
+            async for item in self._container.query_items(
+                query=deployed_query,
+                enable_cross_partition_query=True
+            ):
                 deployed_count = item
 
             # Get successful deployments
             success_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'deployment_feedback' AND c.deployed = true AND c.success = true"
             successful = 0
-            async for item in self._container.query_items(query=success_query):
+            async for item in self._container.query_items(
+                query=success_query,
+                enable_cross_partition_query=True
+            ):
                 successful = item
 
             # Get failed deployments
@@ -300,26 +313,27 @@ class CosmosDBFeedbackStore:
             # Get average satisfaction
             rating_query = "SELECT VALUE AVG(c.satisfaction_rating) FROM c WHERE c.type = 'deployment_feedback'"
             avg_satisfaction = 0
-            async for item in self._container.query_items(query=rating_query):
+            async for item in self._container.query_items(
+                query=rating_query,
+                enable_cross_partition_query=True
+            ):
                 avg_satisfaction = item or 0
 
             # Calculate rates
             deployment_rate = (deployed_count / total_feedback * 100) if total_feedback > 0 else 0
             success_rate = (successful / deployed_count * 100) if deployed_count > 0 else 0
 
-            # Get rating distribution
-            rating_distribution = {}
-            rating_dist_query = """
-                SELECT c.satisfaction_rating, COUNT(1) as count
-                FROM c
-                WHERE c.type = 'deployment_feedback'
-                GROUP BY c.satisfaction_rating
-            """
-            async for item in self._container.query_items(query=rating_dist_query):
+            # Get rating distribution - use client-side aggregation for GROUP BY
+            # (Cosmos DB cross-partition GROUP BY has limitations)
+            rating_distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+            rating_dist_query = "SELECT c.satisfaction_rating FROM c WHERE c.type = 'deployment_feedback'"
+            async for item in self._container.query_items(
+                query=rating_dist_query,
+                enable_cross_partition_query=True
+            ):
                 rating = item.get("satisfaction_rating")
-                count = item.get("count", 0)
-                if rating:
-                    rating_distribution[rating] = count
+                if rating and 1 <= rating <= 5:
+                    rating_distribution[rating] = rating_distribution.get(rating, 0) + 1
 
             # Get common issues
             common_issues = await self._get_common_issues(limit=10)
@@ -349,7 +363,7 @@ class CosmosDBFeedbackStore:
             return []
 
         try:
-            # Get all issues from documents
+            # Get all issues from documents (cross-partition query)
             query = """
                 SELECT c.issues_encountered FROM c
                 WHERE c.type = 'deployment_feedback'
@@ -357,7 +371,10 @@ class CosmosDBFeedbackStore:
             """
 
             issues_count = {}
-            async for item in self._container.query_items(query=query):
+            async for item in self._container.query_items(
+                query=query,
+                enable_cross_partition_query=True
+            ):
                 if item.get("issues_encountered"):
                     for issue in item["issues_encountered"]:
                         normalized = issue.lower().strip()[:100]

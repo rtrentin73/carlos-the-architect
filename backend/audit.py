@@ -244,7 +244,8 @@ class CosmosDBauditStore:
         try:
             async for item in self._container.query_items(
                 query=query,
-                parameters=query_params
+                parameters=query_params,
+                enable_cross_partition_query=True
             ):
                 # Convert to AuditRecord
                 item.pop("_partition_key", None)
@@ -279,50 +280,50 @@ class CosmosDBauditStore:
             from datetime import timedelta
             start_date = start_date - timedelta(days=days)
 
-            # Total events
+            # Total events (cross-partition aggregate)
             total_query = f"""
                 SELECT VALUE COUNT(1) FROM c
                 WHERE c.type = 'audit_record'
                 AND c.timestamp >= '{start_date.isoformat()}'
             """
             total_events = 0
-            async for item in self._container.query_items(query=total_query):
+            async for item in self._container.query_items(
+                query=total_query,
+                enable_cross_partition_query=True
+            ):
                 total_events = item
 
-            # Events by action category
+            # For GROUP BY queries, use client-side aggregation due to cross-partition limitations
+            # Fetch all records and aggregate locally
+            base_query = f"""
+                SELECT c.action, c.severity, c.username FROM c
+                WHERE c.type = 'audit_record'
+                AND c.timestamp >= '{start_date.isoformat()}'
+            """
             action_counts = {}
-            action_query = f"""
-                SELECT c.action, COUNT(1) as count FROM c
-                WHERE c.type = 'audit_record'
-                AND c.timestamp >= '{start_date.isoformat()}'
-                GROUP BY c.action
-            """
-            async for item in self._container.query_items(query=action_query):
-                action_counts[item["action"]] = item["count"]
-
-            # Events by severity
             severity_counts = {}
-            severity_query = f"""
-                SELECT c.severity, COUNT(1) as count FROM c
-                WHERE c.type = 'audit_record'
-                AND c.timestamp >= '{start_date.isoformat()}'
-                GROUP BY c.severity
-            """
-            async for item in self._container.query_items(query=severity_query):
-                severity_counts[item["severity"]] = item["count"]
+            unique_usernames = set()
 
-            # Unique users
-            users_query = f"""
-                SELECT VALUE COUNT(1) FROM (
-                    SELECT DISTINCT c.username FROM c
-                    WHERE c.type = 'audit_record'
-                    AND c.username != null
-                    AND c.timestamp >= '{start_date.isoformat()}'
-                )
-            """
-            unique_users = 0
-            async for item in self._container.query_items(query=users_query):
-                unique_users = item
+            async for item in self._container.query_items(
+                query=base_query,
+                enable_cross_partition_query=True
+            ):
+                # Count by action
+                action = item.get("action")
+                if action:
+                    action_counts[action] = action_counts.get(action, 0) + 1
+
+                # Count by severity
+                severity = item.get("severity")
+                if severity:
+                    severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+                # Track unique users
+                username = item.get("username")
+                if username:
+                    unique_usernames.add(username)
+
+            unique_users = len(unique_usernames)
 
             # Error count
             error_count = severity_counts.get("error", 0) + severity_counts.get("critical", 0)
