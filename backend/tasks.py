@@ -539,16 +539,23 @@ Rules:
 
 Response Format:
 1. A brief summary of what you're fixing (3-5 bullet points)
-2. Complete corrected Terraform code in properly formatted code blocks
+2. **COMPLETE corrected Terraform code** - You MUST include the FULL content of each file
 3. A summary of changes made
 
-Structure your corrected Terraform code with these files (in separate code blocks):
-- `main.tf` - Main resource definitions
-- `variables.tf` - Input variables
-- `outputs.tf` - Output values
-- `versions.tf` - Provider versions and backend config
+CRITICAL: You MUST output the COMPLETE, FULL content of each Terraform file. Do NOT:
+- Reference unchanged sections with "..." or "# ... rest unchanged"
+- Say "same as before" or "no changes needed"
+- Only show the changed portions
 
-Be efficient: Only show the complete corrected files. Don't explain every line - just fix the issues.
+You MUST show the ENTIRE file content, even if most of it is unchanged.
+
+Structure your corrected Terraform code with these files (in separate code blocks):
+- `main.tf` - COMPLETE main resource definitions
+- `variables.tf` - COMPLETE input variables
+- `outputs.tf` - COMPLETE output values
+- `versions.tf` - COMPLETE provider versions and backend config
+
+Be efficient in your explanations, but ALWAYS provide the full file contents.
 
 Start your response with:
 "🔧 Terraform Coder here! Fixing the identified issues (Iteration {iteration})."
