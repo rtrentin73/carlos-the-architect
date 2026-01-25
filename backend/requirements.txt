@@ -17,6 +17,7 @@ openpyxl
 slowapi
 redis[hiredis]
 azure-cosmos
+aiohttp
 httpx
 authlib>=1.3.0
 itsdangerous>=2.1.0
