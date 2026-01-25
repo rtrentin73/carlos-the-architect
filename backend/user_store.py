@@ -154,9 +154,11 @@ class CosmosDBUserStore(UserStoreBase):
                 {"name": "@oauth_id", "value": oauth_id},
             ]
 
+            # Cross-partition query needed because we're not filtering by username (partition key)
             async for item in self._container.query_items(
                 query=query,
                 parameters=params,
+                enable_cross_partition_query=True,
             ):
                 return self._cosmos_to_user_dict(item)
             return None
@@ -232,7 +234,11 @@ class CosmosDBUserStore(UserStoreBase):
             users = []
             query = "SELECT * FROM c WHERE c.type = 'user'"
 
-            async for item in self._container.query_items(query=query):
+            # Cross-partition query to get all users across all partitions
+            async for item in self._container.query_items(
+                query=query,
+                enable_cross_partition_query=True
+            ):
                 users.append(self._cosmos_to_user_dict(item))
 
             return users
