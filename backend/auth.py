@@ -67,6 +67,9 @@ def seed_admin_user():
             "hashed_password": hashed_password,
             "disabled": False,
             "is_admin": True,
+            "auth_provider": "local",
+            "oauth_id": None,
+            "avatar_url": None,
         }
         print(f"  Seeded admin user: {admin_username}")
     return admin_username
@@ -229,38 +232,6 @@ def get_or_create_oauth_user(
     # Use email prefix as username, or name if email not available
     username = email.split("@")[0] if email else name.replace(" ", "").lower()
     return create_oauth_user(provider, oauth_id, email, username, avatar_url)
-
-
-def require_admin(current_user: User = Depends(get_current_active_user)) -> User:
-    """Dependency to require admin role for an endpoint."""
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
-    return current_user
-
-
-def seed_admin_user():
-    """Seed the default admin user on startup."""
-    admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_password = os.getenv("ADMIN_PASSWORD", "carlos-admin-2024")
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@carlos.ai")
-
-    if admin_username not in users_db:
-        hashed_password = get_password_hash(admin_password)
-        users_db[admin_username] = {
-            "username": admin_username,
-            "email": admin_email,
-            "hashed_password": hashed_password,
-            "disabled": False,
-            "is_admin": True,
-            "auth_provider": "local",
-            "oauth_id": None,
-            "avatar_url": None,
-        }
-        print(f"  Seeded admin user: {admin_username}")
-    return admin_username
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
