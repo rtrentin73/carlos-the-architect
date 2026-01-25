@@ -42,7 +42,8 @@ export default function FeedbackDashboard() {
       const analyticsData = await analyticsRes.json();
       const feedbackData = await feedbackRes.json();
 
-      setAnalytics(analyticsData);
+      // Extract analytics from wrapper object
+      setAnalytics(analyticsData.analytics || analyticsData);
       setFeedback(feedbackData.feedback || []);
     } catch (err) {
       console.error('Error fetching feedback:', err);
@@ -192,10 +193,15 @@ export default function FeedbackDashboard() {
             Common Issues Reported
           </h3>
           <ul className="space-y-2">
-            {analytics.common_issues.map((issue, idx) => (
+            {analytics.common_issues.map((item, idx) => (
               <li key={idx} className="flex items-start gap-2 text-amber-700">
                 <span className="text-amber-500 mt-1">-</span>
-                <span>{issue}</span>
+                <span>
+                  {typeof item === 'string' ? item : item.issue}
+                  {item.count && item.count > 1 && (
+                    <span className="text-amber-500 text-sm ml-1">({item.count}x)</span>
+                  )}
+                </span>
               </li>
             ))}
           </ul>

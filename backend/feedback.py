@@ -307,18 +307,34 @@ class CosmosDBFeedbackStore:
             deployment_rate = (deployed_count / total_feedback * 100) if total_feedback > 0 else 0
             success_rate = (successful / deployed_count * 100) if deployed_count > 0 else 0
 
+            # Get rating distribution
+            rating_distribution = {}
+            rating_dist_query = """
+                SELECT c.satisfaction_rating, COUNT(1) as count
+                FROM c
+                WHERE c.type = 'deployment_feedback'
+                GROUP BY c.satisfaction_rating
+            """
+            async for item in self._container.query_items(query=rating_dist_query):
+                rating = item.get("satisfaction_rating")
+                count = item.get("count", 0)
+                if rating:
+                    rating_distribution[rating] = count
+
             # Get common issues
             common_issues = await self._get_common_issues(limit=10)
 
             return {
-                "total_designs_tracked": total_feedback,
+                # Frontend expected field names
+                "total_feedback": total_feedback,
+                "deployment_rate": round(deployment_rate, 2),
+                "success_rate": round(success_rate, 2),
+                "average_rating": round(avg_satisfaction, 2) if avg_satisfaction else 0,
+                "rating_distribution": rating_distribution,
+                # Additional details
                 "deployed_count": deployed_count,
-                "deployment_rate_percent": round(deployment_rate, 2),
                 "successful_deployments": successful,
                 "failed_deployments": failed,
-                "success_rate_percent": round(success_rate, 2),
-                "average_satisfaction": round(avg_satisfaction, 2) if avg_satisfaction else 0,
-                "total_ratings": total_feedback,
                 "common_issues": common_issues,
                 "connected": True,
                 "storage": "cosmosdb",
@@ -361,14 +377,16 @@ class CosmosDBFeedbackStore:
     def _empty_analytics(self) -> dict:
         """Return empty analytics structure."""
         return {
-            "total_designs_tracked": 0,
+            # Frontend expected field names
+            "total_feedback": 0,
+            "deployment_rate": 0,
+            "success_rate": 0,
+            "average_rating": 0,
+            "rating_distribution": {},
+            # Additional details
             "deployed_count": 0,
-            "deployment_rate_percent": 0,
             "successful_deployments": 0,
             "failed_deployments": 0,
-            "success_rate_percent": 0,
-            "average_satisfaction": 0,
-            "total_ratings": 0,
             "common_issues": [],
             "connected": False,
         }
@@ -393,6 +411,7 @@ class InMemoryFeedbackStore:
             "rating_sum": 0,
         }
         self._issues: dict[str, int] = {}
+        self._rating_distribution: dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
 
     async def connect(self):
         print("  Using in-memory feedback store (Cosmos DB not configured)")
@@ -444,6 +463,11 @@ class InMemoryFeedbackStore:
 
         self._analytics["total_ratings"] += 1
         self._analytics["rating_sum"] += feedback.satisfaction_rating
+
+        # Track rating distribution
+        rating = feedback.satisfaction_rating
+        if 1 <= rating <= 5:
+            self._rating_distribution[rating] = self._rating_distribution.get(rating, 0) + 1
 
         # Track issues
         if feedback.issues_encountered:
@@ -503,7 +527,7 @@ class InMemoryFeedbackStore:
 
         deployment_rate = (deployed / total * 100) if total > 0 else 0
         success_rate = (successful / deployed * 100) if deployed > 0 else 0
-        avg_satisfaction = (rating_sum / total_ratings) if total_ratings > 0 else 0
+        avg_rating = (rating_sum / total_ratings) if total_ratings > 0 else 0
 
         # Get common issues
         common_issues = sorted(
@@ -513,14 +537,16 @@ class InMemoryFeedbackStore:
         )[:10]
 
         return {
-            "total_designs_tracked": total,
+            # Frontend expected field names
+            "total_feedback": total,
+            "deployment_rate": round(deployment_rate, 2),
+            "success_rate": round(success_rate, 2),
+            "average_rating": round(avg_rating, 2),
+            "rating_distribution": dict(self._rating_distribution),
+            # Additional details
             "deployed_count": deployed,
-            "deployment_rate_percent": round(deployment_rate, 2),
             "successful_deployments": successful,
             "failed_deployments": self._analytics["failed_deployments"],
-            "success_rate_percent": round(success_rate, 2),
-            "average_satisfaction": round(avg_satisfaction, 2),
-            "total_ratings": total_ratings,
             "common_issues": common_issues,
             "connected": False,
             "storage": "in-memory",
