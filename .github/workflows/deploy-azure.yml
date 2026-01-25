@@ -70,26 +70,32 @@ jobs:
         id: tf-outputs
         working-directory: infra
         run: |
-          # Non-sensitive outputs
-          echo "acr_login_server=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
-          echo "aks_cluster_name=$(terraform output -raw aks_cluster_name)" >> $GITHUB_OUTPUT
-          echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
-          echo "redis_hostname=$(terraform output -raw redis_hostname)" >> $GITHUB_OUTPUT
-          echo "redis_port=$(terraform output -raw redis_port)" >> $GITHUB_OUTPUT
-          echo "cosmosdb_endpoint=$(terraform output -raw cosmosdb_endpoint)" >> $GITHUB_OUTPUT
-          echo "document_intelligence_endpoint=$(terraform output -raw document_intelligence_endpoint)" >> $GITHUB_OUTPUT
+          # Get all outputs as JSON (this bypasses the sensitive output suppression)
+          terraform output -json > tf_outputs.json
 
-          # Sensitive outputs - capture to variables first, then mask and output
-          REDIS_KEY=$(terraform output -raw redis_primary_access_key)
-          COSMOSDB_KEY=$(terraform output -raw cosmosdb_primary_key)
-          DOCINT_KEY=$(terraform output -raw document_intelligence_key)
+          # Non-sensitive outputs
+          echo "acr_login_server=$(jq -r '.acr_login_server.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+          echo "aks_cluster_name=$(jq -r '.aks_cluster_name.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+          echo "resource_group=$(jq -r '.resource_group_name.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+          echo "redis_hostname=$(jq -r '.redis_hostname.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+          echo "redis_port=$(jq -r '.redis_port.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+          echo "cosmosdb_endpoint=$(jq -r '.cosmosdb_endpoint.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+          echo "document_intelligence_endpoint=$(jq -r '.document_intelligence_endpoint.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+
+          # Sensitive outputs - extract from JSON
+          REDIS_KEY=$(jq -r '.redis_primary_access_key.value' tf_outputs.json)
+          COSMOSDB_KEY=$(jq -r '.cosmosdb_primary_key.value' tf_outputs.json)
+          DOCINT_KEY=$(jq -r '.document_intelligence_key.value' tf_outputs.json)
+
+          # Clean up sensitive file
+          rm -f tf_outputs.json
 
           # Validate sensitive outputs are not empty
-          if [ -z "$REDIS_KEY" ]; then
+          if [ -z "$REDIS_KEY" ] || [ "$REDIS_KEY" = "null" ]; then
             echo "ERROR: Redis primary access key is empty"
             exit 1
           fi
-          if [ -z "$COSMOSDB_KEY" ]; then
+          if [ -z "$COSMOSDB_KEY" ] || [ "$COSMOSDB_KEY" = "null" ]; then
             echo "ERROR: Cosmos DB primary key is empty"
             exit 1
           fi
