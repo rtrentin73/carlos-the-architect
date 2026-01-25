@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
 import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode, Trash2, Clock, Hash } from 'lucide-react';
 import Splash from './components/Splash';
+import carlosBackground from './assets/splash.jpg';
 import LoginPage from './components/LoginPage';
 import DeploymentTracker from './components/DeploymentTracker';
 import FeedbackDashboard from './components/FeedbackDashboard';
@@ -745,8 +746,13 @@ export default function App() {
       </aside>
 
       {/* Main Design Area */}
-      <main className="flex-1 flex flex-col">
-        <div className="flex-1 overflow-y-auto p-12">
+      <main className="flex-1 flex flex-col relative">
+        {/* Shaded background image */}
+        <div
+          className="absolute inset-0 bg-cover bg-center opacity-[0.03] pointer-events-none"
+          style={{ backgroundImage: `url(${carlosBackground})` }}
+        />
+        <div className="flex-1 overflow-y-auto p-12 relative z-10">
           <div className="max-w-3xl mx-auto bg-white shadow-xl rounded-2xl p-10 min-h-[80vh] border border-slate-200">
             {currentView === "blueprint" && (
               <>
