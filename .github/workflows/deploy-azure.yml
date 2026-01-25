@@ -36,13 +36,13 @@ jobs:
       aks_cluster_name: ${{ steps.tf-outputs.outputs.aks_cluster_name }}
       resource_group: ${{ steps.tf-outputs.outputs.resource_group }}
       redis_hostname: ${{ steps.tf-outputs.outputs.redis_hostname }}
-      redis_key: ${{ steps.tf-outputs.outputs.redis_key }}
+      redis_key: ${{ steps.azure-secrets.outputs.redis_key }}
       cosmosdb_endpoint: ${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}
-      cosmosdb_key: ${{ steps.tf-outputs.outputs.cosmosdb_key }}
+      cosmosdb_key: ${{ steps.azure-secrets.outputs.cosmosdb_key }}
       redis_port: ${{ steps.tf-outputs.outputs.redis_port }}
-      redis_password: ${{ steps.tf-outputs.outputs.redis_password }}
+      redis_password: ${{ steps.azure-secrets.outputs.redis_password }}
       document_intelligence_endpoint: ${{ steps.tf-outputs.outputs.document_intelligence_endpoint }}
-      document_intelligence_key: ${{ steps.tf-outputs.outputs.document_intelligence_key }}
+      document_intelligence_key: ${{ steps.azure-secrets.outputs.document_intelligence_key }}
 
     steps:
       - name: Checkout code
@@ -66,46 +66,63 @@ jobs:
         working-directory: infra
         run: terraform apply -auto-approve tfplan
 
-      - name: Get Terraform Outputs
+      - name: Get Terraform Outputs (non-sensitive)
         id: tf-outputs
         working-directory: infra
         run: |
-          # Get all outputs as JSON (this bypasses the sensitive output suppression)
-          terraform output -json > tf_outputs.json
+          # Non-sensitive outputs only (sensitive ones fetched via Azure CLI)
+          echo "acr_login_server=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
+          echo "aks_cluster_name=$(terraform output -raw aks_cluster_name)" >> $GITHUB_OUTPUT
+          echo "resource_group=$(terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+          echo "redis_hostname=$(terraform output -raw redis_hostname)" >> $GITHUB_OUTPUT
+          echo "redis_port=$(terraform output -raw redis_port)" >> $GITHUB_OUTPUT
+          echo "cosmosdb_endpoint=$(terraform output -raw cosmosdb_endpoint)" >> $GITHUB_OUTPUT
+          echo "document_intelligence_endpoint=$(terraform output -raw document_intelligence_endpoint)" >> $GITHUB_OUTPUT
 
-          # Non-sensitive outputs
-          echo "acr_login_server=$(jq -r '.acr_login_server.value' tf_outputs.json)" >> $GITHUB_OUTPUT
-          echo "aks_cluster_name=$(jq -r '.aks_cluster_name.value' tf_outputs.json)" >> $GITHUB_OUTPUT
-          echo "resource_group=$(jq -r '.resource_group_name.value' tf_outputs.json)" >> $GITHUB_OUTPUT
-          echo "redis_hostname=$(jq -r '.redis_hostname.value' tf_outputs.json)" >> $GITHUB_OUTPUT
-          echo "redis_port=$(jq -r '.redis_port.value' tf_outputs.json)" >> $GITHUB_OUTPUT
-          echo "cosmosdb_endpoint=$(jq -r '.cosmosdb_endpoint.value' tf_outputs.json)" >> $GITHUB_OUTPUT
-          echo "document_intelligence_endpoint=$(jq -r '.document_intelligence_endpoint.value' tf_outputs.json)" >> $GITHUB_OUTPUT
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-          # Sensitive outputs - extract from JSON
-          REDIS_KEY=$(jq -r '.redis_primary_access_key.value' tf_outputs.json)
-          COSMOSDB_KEY=$(jq -r '.cosmosdb_primary_key.value' tf_outputs.json)
-          DOCINT_KEY=$(jq -r '.document_intelligence_key.value' tf_outputs.json)
+      - name: Get Sensitive Values from Azure
+        id: azure-secrets
+        run: |
+          RESOURCE_GROUP="${{ steps.tf-outputs.outputs.resource_group }}"
 
-          # Clean up sensitive file
-          rm -f tf_outputs.json
+          # Get Redis access key directly from Azure
+          REDIS_NAME=$(echo "${{ steps.tf-outputs.outputs.redis_hostname }}" | cut -d'.' -f1)
+          REDIS_KEY=$(az redis list-keys --resource-group "$RESOURCE_GROUP" --name "$REDIS_NAME" --query primaryKey -o tsv)
 
-          # Validate sensitive outputs are not empty
-          if [ -z "$REDIS_KEY" ] || [ "$REDIS_KEY" = "null" ]; then
-            echo "ERROR: Redis primary access key is empty"
+          # Get Cosmos DB key directly from Azure
+          COSMOS_NAME=$(echo "${{ steps.tf-outputs.outputs.cosmosdb_endpoint }}" | sed 's|https://||' | cut -d'.' -f1)
+          COSMOSDB_KEY=$(az cosmosdb keys list --resource-group "$RESOURCE_GROUP" --name "$COSMOS_NAME" --query primaryMasterKey -o tsv)
+
+          # Get Document Intelligence key directly from Azure
+          DOCINT_ENDPOINT="${{ steps.tf-outputs.outputs.document_intelligence_endpoint }}"
+          if [ -n "$DOCINT_ENDPOINT" ] && [ "$DOCINT_ENDPOINT" != "null" ]; then
+            DOCINT_NAME=$(echo "$DOCINT_ENDPOINT" | sed 's|https://||' | cut -d'.' -f1)
+            DOCINT_KEY=$(az cognitiveservices account keys list --resource-group "$RESOURCE_GROUP" --name "$DOCINT_NAME" --query key1 -o tsv 2>/dev/null || echo "")
+          else
+            DOCINT_KEY=""
+          fi
+
+          # Validate
+          if [ -z "$REDIS_KEY" ]; then
+            echo "ERROR: Failed to get Redis key from Azure"
             exit 1
           fi
-          if [ -z "$COSMOSDB_KEY" ] || [ "$COSMOSDB_KEY" = "null" ]; then
-            echo "ERROR: Cosmos DB primary key is empty"
+          if [ -z "$COSMOSDB_KEY" ]; then
+            echo "ERROR: Failed to get Cosmos DB key from Azure"
             exit 1
           fi
 
-          # Mask sensitive values before outputting
+          # Mask and output
           echo "::add-mask::$REDIS_KEY"
           echo "::add-mask::$COSMOSDB_KEY"
-          echo "::add-mask::$DOCINT_KEY"
+          if [ -n "$DOCINT_KEY" ]; then
+            echo "::add-mask::$DOCINT_KEY"
+          fi
 
-          # Output sensitive values
           echo "redis_key=$REDIS_KEY" >> $GITHUB_OUTPUT
           echo "redis_password=$REDIS_KEY" >> $GITHUB_OUTPUT
           echo "cosmosdb_key=$COSMOSDB_KEY" >> $GITHUB_OUTPUT
