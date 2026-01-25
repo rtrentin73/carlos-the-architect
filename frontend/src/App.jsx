@@ -1615,13 +1615,19 @@ function parseAgentTranscript(text) {
   };
 
   // Extended regex to match all agent headers
-  const headerRegex = /^\*\*(Carlos|Security Analyst|Cost Specialist|SRE|Chief Auditor|Ronei|Requirements Team|Design Recommender|Terraform Coder|Terraform Validator|Terraform Corrector):\*\*\s*$/i;
+  // Handles variations like "Terraform Coder (Correction 1):"
+  const headerRegex = /^\*\*(Carlos|Security Analyst|Cost Specialist|SRE|Chief Auditor|Ronei|Requirements Team|Refined Requirements|Design Recommender|Terraform Coder|Terraform Coder \(Correction \d+\)|Terraform Validator|Terraform Corrector):\*\*\s*$/i;
 
   for (const line of lines) {
     const match = line.match(headerRegex);
     if (match) {
       flush();
-      currentAgent = match[1];
+      // Normalize agent name (remove correction iteration for display)
+      let agentName = match[1];
+      if (agentName.toLowerCase().startsWith('terraform coder (correction')) {
+        agentName = 'Terraform Coder (Correction)';
+      }
+      currentAgent = agentName;
     } else {
       buffer.push(line);
     }
@@ -1683,7 +1689,7 @@ function getAgentVisuals(agent) {
   }
 
   // Ronei - Product Manager / Requirements Analyst
-  if (name === "ronei" || name.includes("requirements team")) {
+  if (name === "ronei" || name.includes("requirements team") || name.includes("refined requirements")) {
     return {
       iconBg: "bg-indigo-100",
       labelColor: "text-indigo-700",
