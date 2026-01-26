@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.9](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.8...v0.2.9) (2026-01-26)
+
+
+### Bug Fixes
+
+* Make admin action buttons icon-only for better fit ([6721c59](https://github.com/rtrentin73/carlos-the-architect/commit/6721c590593d0844913e0f5f23066416f725491c))
+* Make admin action buttons icon-only for better fit ([afe3f1d](https://github.com/rtrentin73/carlos-the-architect/commit/afe3f1dcfa1f4387805c245f454dae99965e2206))
+
 ## [0.2.8](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.7...v0.2.8) (2026-01-26)
 
 
