@@ -860,10 +860,14 @@ export default function App() {
 
       {/* Main Design Area */}
       <main className="flex-1 flex flex-col relative">
-        {/* Shaded background image */}
+        {/* Tiled Carlos background pattern */}
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-[0.03] pointer-events-none"
-          style={{ backgroundImage: `url(${carlosBackground})` }}
+          className="absolute inset-0 opacity-[0.04] pointer-events-none"
+          style={{
+            backgroundImage: `url(${carlosBackground})`,
+            backgroundSize: '80px 80px',
+            backgroundRepeat: 'repeat',
+          }}
         />
         <div className="flex-1 overflow-y-auto p-12 relative z-10">
           <div className="max-w-3xl mx-auto bg-white shadow-xl rounded-2xl p-10 min-h-[80vh] border border-slate-200">
