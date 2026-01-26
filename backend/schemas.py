@@ -5,9 +5,31 @@ These Pydantic models define the JSON structure for agent outputs,
 enabling reliable parsing and programmatic analysis.
 """
 
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import List, Optional, Any
 from enum import Enum
+import re
+
+
+def parse_currency_to_float(value: Any) -> float:
+    """Parse a currency string or number to float.
+
+    Handles formats like: "$5,000.00", "5,000", "5000", 5000, 5000.0
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        # Remove currency symbols, commas, and whitespace
+        cleaned = re.sub(r'[$€£¥,\s]', '', value.strip())
+        if not cleaned:
+            return 0.0
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 class ServiceCategory(str, Enum):
@@ -32,6 +54,21 @@ class AzureService(BaseModel):
     category: ServiceCategory = Field(description="Service category")
     notes: Optional[str] = Field(default=None, description="Additional notes about configuration")
 
+    @field_validator('monthly_cost_usd', mode='before')
+    @classmethod
+    def parse_monthly_cost(cls, v):
+        return parse_currency_to_float(v)
+
+    @field_validator('quantity', mode='before')
+    @classmethod
+    def parse_quantity(cls, v):
+        if isinstance(v, str):
+            try:
+                return int(v.replace(',', '').strip())
+            except ValueError:
+                return 1
+        return v
+
 
 class CostAnalysis(BaseModel):
     """Structured cost analysis output from Cost Analyst agent"""
@@ -55,6 +92,31 @@ class CostAnalysis(BaseModel):
         default="medium",
         description="Confidence level: low, medium, high"
     )
+
+    @field_validator('total_monthly_cost_usd', 'total_annual_cost_usd', mode='before')
+    @classmethod
+    def parse_cost_values(cls, v):
+        return parse_currency_to_float(v)
+
+    @field_validator('reserved_instance_savings', mode='before')
+    @classmethod
+    def parse_ri_savings(cls, v):
+        if v is None:
+            return None
+        parsed = parse_currency_to_float(v)
+        return parsed if parsed > 0 else None
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse_cost_breakdown(cls, data):
+        """Parse cost breakdown dictionary values from strings to floats."""
+        if isinstance(data, dict) and 'cost_breakdown_by_category' in data:
+            breakdown = data.get('cost_breakdown_by_category', {})
+            if isinstance(breakdown, dict):
+                data['cost_breakdown_by_category'] = {
+                    k: parse_currency_to_float(v) for k, v in breakdown.items()
+                }
+        return data
 
 
 class SecurityFinding(BaseModel):
@@ -85,6 +147,16 @@ class SecurityAnalysis(BaseModel):
     network_segmentation: bool = Field(description="Whether network is properly segmented")
     critical_findings_count: int = Field(description="Number of critical findings")
     high_findings_count: int = Field(description="Number of high severity findings")
+
+    @field_validator('overall_security_score', 'critical_findings_count', 'high_findings_count', mode='before')
+    @classmethod
+    def parse_int_values(cls, v):
+        if isinstance(v, str):
+            try:
+                return int(v.replace(',', '').strip())
+            except ValueError:
+                return 0
+        return v
 
 
 class ReliabilityMetrics(BaseModel):
@@ -126,6 +198,21 @@ class ReliabilityMetrics(BaseModel):
         default=[],
         description="Recommended health check endpoints"
     )
+
+    @field_validator('estimated_sla_percentage', mode='before')
+    @classmethod
+    def parse_sla(cls, v):
+        parsed = parse_currency_to_float(v)
+        # Clamp to valid range
+        return max(0.0, min(100.0, parsed))
+
+    @field_validator('disaster_recovery_rto_hours', 'disaster_recovery_rpo_hours', mode='before')
+    @classmethod
+    def parse_dr_hours(cls, v):
+        if v is None:
+            return None
+        parsed = parse_currency_to_float(v)
+        return parsed if parsed > 0 else None
 
 
 def format_cost_analysis(cost_data: CostAnalysis) -> str:
