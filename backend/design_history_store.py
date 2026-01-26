@@ -9,6 +9,8 @@ Uses the same Cosmos DB database as feedback but with a separate container for d
 
 import os
 import uuid
+import gzip
+import base64
 from datetime import datetime, timezone
 from typing import Optional, List
 from abc import ABC, abstractmethod
@@ -113,17 +115,55 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
             await self._client.close()
             self._connected = False
 
-    def _truncate_field(self, value: Optional[str], max_chars: int = 100000) -> Optional[str]:
-        """Truncate a string field to fit within Cosmos DB limits."""
+    def _compress_field(self, value: Optional[str]) -> Optional[str]:
+        """Compress a string field using gzip and encode as base64.
+
+        This typically achieves 70-80% compression for text content,
+        allowing large fields like architecture, terraform, and diagrams
+        to fit within Cosmos DB's 2MB document limit.
+        """
         if value is None:
             return None
-        if len(value) <= max_chars:
+        if not value:
             return value
-        # Truncate and add indicator
-        return value[:max_chars] + "\n\n... [truncated due to size limits]"
+        try:
+            original_size = len(value.encode('utf-8'))
+            # Compress the string using gzip
+            compressed = gzip.compress(value.encode('utf-8'), compresslevel=9)
+            # Encode as base64 for safe JSON storage
+            encoded = base64.b64encode(compressed).decode('ascii')
+            result = f"gzip:{encoded}"
+            compressed_size = len(result)
+            ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
+            if original_size > 10000:  # Only log for fields > 10KB
+                print(f"    📦 Compressed {original_size/1024:.1f}KB → {compressed_size/1024:.1f}KB ({ratio:.0f}% reduction)")
+            return result
+        except Exception as e:
+            print(f"  ⚠️ Compression failed, storing raw: {e}")
+            return value
+
+    def _decompress_field(self, value: Optional[str]) -> Optional[str]:
+        """Decompress a gzip-compressed base64-encoded field."""
+        if value is None:
+            return None
+        if not value:
+            return value
+        # Check if this is a compressed field
+        if not value.startswith("gzip:"):
+            return value  # Return as-is if not compressed
+        try:
+            # Remove prefix and decode base64
+            encoded = value[5:]  # Remove "gzip:" prefix
+            compressed = base64.b64decode(encoded)
+            # Decompress
+            decompressed = gzip.decompress(compressed)
+            return decompressed.decode('utf-8')
+        except Exception as e:
+            print(f"  ⚠️ Decompression failed, returning raw: {e}")
+            return value
 
     async def save_design(self, username: str, design: dict) -> dict:
-        """Save a design to history."""
+        """Save a design to history with gzip compression for large fields."""
         if not self._connected or not self._container:
             raise RuntimeError("Cosmos DB not connected")
 
@@ -131,25 +171,22 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
         design_id = design.get("id") or str(uuid.uuid4())
         print(f"  💾 Saving design {design_id} to Cosmos DB for user {username}")
 
-        # Truncate large fields to stay under Cosmos DB 2MB document limit
-        # Reserve ~200KB for metadata, allow ~300KB per large field
-        max_field_size = 300000  # ~300KB per field
-
-        # Build the document with truncated fields
+        # Build the document with compressed large fields
+        # Gzip typically achieves 70-80% compression, allowing full content storage
         document = {
             "id": design_id,
             "type": "design_history",
             "username": username,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "requirements": self._truncate_field(design.get("requirements"), 50000),
+            "requirements": self._compress_field(design.get("requirements")),
             "cloud_provider": design.get("cloud_provider"),
             "environment": design.get("environment"),
-            "architecture": self._truncate_field(design.get("architecture"), max_field_size),
-            "terraform": self._truncate_field(design.get("terraform"), max_field_size),
-            "diagram_svg": None,  # Don't store SVGs - too large
-            "cost_estimate": self._truncate_field(design.get("cost_estimate"), 50000),
-            "security_analysis": self._truncate_field(design.get("security_analysis"), 50000),
-            "reliability_analysis": self._truncate_field(design.get("reliability_analysis"), 50000),
+            "architecture": self._compress_field(design.get("architecture")),
+            "terraform": self._compress_field(design.get("terraform")),
+            "diagram_svg": self._compress_field(design.get("diagram_svg")),  # Now stored with compression
+            "cost_estimate": self._compress_field(design.get("cost_estimate")),
+            "security_analysis": self._compress_field(design.get("security_analysis")),
+            "reliability_analysis": self._compress_field(design.get("reliability_analysis")),
             "title": design.get("title") or self._generate_title(design),
             # Additional fields from frontend
             "scenario": design.get("scenario"),
@@ -157,17 +194,22 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
             "compliance_level": design.get("compliance_level"),
             "reliability_level": design.get("reliability_level"),
             "strictness_level": design.get("strictness_level"),
-            "ronei_design": self._truncate_field(design.get("ronei_design"), max_field_size),
+            "ronei_design": self._compress_field(design.get("ronei_design")),
             "audit_status": design.get("audit_status"),
-            "audit_report": self._truncate_field(design.get("audit_report"), 50000),
-            "recommendation": self._truncate_field(design.get("recommendation"), 50000),
-            "terraform_validation": self._truncate_field(design.get("terraform_validation"), 50000),
-            "agent_chat": self._truncate_field(design.get("agent_chat"), max_field_size),
+            "audit_report": self._compress_field(design.get("audit_report")),
+            "recommendation": self._compress_field(design.get("recommendation")),
+            "terraform_validation": self._compress_field(design.get("terraform_validation")),
+            "agent_chat": self._compress_field(design.get("agent_chat")),
             "carlos_tokens": design.get("carlos_tokens"),
             "ronei_tokens": design.get("ronei_tokens"),
             "total_tokens": design.get("total_tokens"),
             "duration_seconds": design.get("duration_seconds"),
         }
+
+        # Calculate document size for logging
+        import json
+        doc_size = len(json.dumps(document).encode('utf-8'))
+        print(f"  📦 Compressed document size: {doc_size / 1024:.1f} KB")
 
         try:
             await self._container.create_item(body=document)
@@ -298,20 +340,20 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
         return "Untitled Design"
 
     def _cosmos_to_design_dict(self, item: dict) -> dict:
-        """Convert Cosmos DB document to design dict."""
+        """Convert Cosmos DB document to design dict, decompressing fields."""
         return {
             "id": item.get("id"),
             "username": item.get("username"),
             "created_at": item.get("created_at"),
-            "requirements": item.get("requirements"),
+            "requirements": self._decompress_field(item.get("requirements")),
             "cloud_provider": item.get("cloud_provider"),
             "environment": item.get("environment"),
-            "architecture": item.get("architecture"),
-            "terraform": item.get("terraform"),
-            "diagram_svg": item.get("diagram_svg"),
-            "cost_estimate": item.get("cost_estimate"),
-            "security_analysis": item.get("security_analysis"),
-            "reliability_analysis": item.get("reliability_analysis"),
+            "architecture": self._decompress_field(item.get("architecture")),
+            "terraform": self._decompress_field(item.get("terraform")),
+            "diagram_svg": self._decompress_field(item.get("diagram_svg")),
+            "cost_estimate": self._decompress_field(item.get("cost_estimate")),
+            "security_analysis": self._decompress_field(item.get("security_analysis")),
+            "reliability_analysis": self._decompress_field(item.get("reliability_analysis")),
             "title": item.get("title"),
             # Additional fields from frontend
             "scenario": item.get("scenario"),
@@ -319,12 +361,12 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
             "compliance_level": item.get("compliance_level"),
             "reliability_level": item.get("reliability_level"),
             "strictness_level": item.get("strictness_level"),
-            "ronei_design": item.get("ronei_design"),
+            "ronei_design": self._decompress_field(item.get("ronei_design")),
             "audit_status": item.get("audit_status"),
-            "audit_report": item.get("audit_report"),
-            "recommendation": item.get("recommendation"),
-            "terraform_validation": item.get("terraform_validation"),
-            "agent_chat": item.get("agent_chat"),
+            "audit_report": self._decompress_field(item.get("audit_report")),
+            "recommendation": self._decompress_field(item.get("recommendation")),
+            "terraform_validation": self._decompress_field(item.get("terraform_validation")),
+            "agent_chat": self._decompress_field(item.get("agent_chat")),
             "carlos_tokens": item.get("carlos_tokens"),
             "ronei_tokens": item.get("ronei_tokens"),
             "total_tokens": item.get("total_tokens"),
