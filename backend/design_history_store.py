@@ -161,30 +161,35 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
     async def get_user_designs(self, username: str, limit: int = 50) -> List[dict]:
         """Get all designs for a user, ordered by creation date (newest first)."""
         if not self._connected or not self._container:
+            print(f"  ⚠️ Design history store not connected, returning empty list")
             return []
 
         try:
             designs = []
+            # Use TOP instead of OFFSET/LIMIT for better Cosmos DB compatibility
             query = """
-                SELECT * FROM c
+                SELECT TOP @limit * FROM c
                 WHERE c.username = @username AND c.type = 'design_history'
                 ORDER BY c.created_at DESC
-                OFFSET 0 LIMIT @limit
             """
             params = [
                 {"name": "@username", "value": username},
                 {"name": "@limit", "value": limit},
             ]
 
+            print(f"  📊 Querying designs for user: {username}")
             async for item in self._container.query_items(
                 query=query,
                 parameters=params,
             ):
                 designs.append(self._cosmos_to_design_dict(item))
 
+            print(f"  📊 Query returned {len(designs)} designs")
             return designs
         except Exception as e:
-            print(f"  Error getting designs for user {username}: {e}")
+            print(f"  ❌ Error getting designs for user {username}: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     async def get_design(self, design_id: str, username: str) -> Optional[dict]:
@@ -423,11 +428,13 @@ async def initialize_design_history_store() -> DesignHistoryStoreBase:
     cosmos_store = CosmosDBDesignHistoryStore()
     if await cosmos_store.connect():
         _design_history_store = cosmos_store
+        print("📚 Design history: Using Cosmos DB (persistent storage)")
         return _design_history_store
 
     # Fall back to in-memory
     _design_history_store = InMemoryDesignHistoryStore()
     await _design_history_store.connect()
+    print("📚 Design history: Using in-memory store (⚠️ data will be lost on restart)")
     return _design_history_store
 
 
