@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.5...v0.2.6) (2026-01-26)
+
+
+### Features
+
+* Add admin ability to delete users ([e038f6e](https://github.com/rtrentin73/carlos-the-architect/commit/e038f6ee6ab7c6aec7635dd43d31c35915c5f4c4))
+* Add admin ability to delete users ([2b92db7](https://github.com/rtrentin73/carlos-the-architect/commit/2b92db7b5e928ccb8e1e746fe50623d0a85898c1))
+
 ## [0.2.5](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.4...v0.2.5) (2026-01-26)
 
 
