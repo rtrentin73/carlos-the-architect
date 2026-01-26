@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.6...v0.2.7) (2026-01-26)
+
+
+### Bug Fixes
+
+* Add missing AuditMiddleware to FastAPI app ([8157c6f](https://github.com/rtrentin73/carlos-the-architect/commit/8157c6f212f54fbfd1ed1ed918f235f817cf69c5))
+* Add missing AuditMiddleware to FastAPI app ([5eac34c](https://github.com/rtrentin73/carlos-the-architect/commit/5eac34c9e6c3ecf30dcd359219333176cc00c08f))
+
 ## [0.2.6](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.5...v0.2.6) (2026-01-26)
 
 
