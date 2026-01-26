@@ -36,7 +36,10 @@ export default function LoginPage() {
     fetch(`${backendBaseUrl}/auth/providers`)
       .then(res => res.json())
       .then(data => setProviders(data.providers || {}))
-      .catch(() => setProviders({ google: false, github: false }));
+      .catch((err) => {
+        console.warn('Could not fetch OAuth providers from', backendBaseUrl, ':', err.message);
+        setProviders({ google: false, github: false });
+      });
   }, []);
 
   // Show OAuth error from context

@@ -86,17 +86,33 @@ export function AuthProvider({ children }) {
     formData.append('username', username);
     formData.append('password', password);
 
-    const response = await fetch(`${backendBaseUrl}/auth/login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: formData,
-    });
+    let response;
+    try {
+      response = await fetch(`${backendBaseUrl}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData,
+      });
+    } catch (error) {
+      // Network error - fetch itself failed (CORS, network down, wrong URL)
+      console.error('Login fetch error:', error);
+      throw new Error(
+        `Cannot connect to server. Please check that the backend is running at ${backendBaseUrl}`
+      );
+    }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Login failed');
+      let errorMessage = 'Login failed';
+      try {
+        const error = await response.json();
+        errorMessage = error.detail || errorMessage;
+      } catch {
+        // Response wasn't JSON
+        errorMessage = `Login failed (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
@@ -116,17 +132,33 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (username, password, email = null) => {
-    const response = await fetch(`${backendBaseUrl}/auth/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ username, password, email }),
-    });
+    let response;
+    try {
+      response = await fetch(`${backendBaseUrl}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password, email }),
+      });
+    } catch (error) {
+      // Network error - fetch itself failed (CORS, network down, wrong URL)
+      console.error('Registration fetch error:', error);
+      throw new Error(
+        `Cannot connect to server. Please check that the backend is running at ${backendBaseUrl}`
+      );
+    }
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Registration failed');
+      let errorMessage = 'Registration failed';
+      try {
+        const error = await response.json();
+        errorMessage = error.detail || errorMessage;
+      } catch {
+        // Response wasn't JSON
+        errorMessage = `Registration failed (HTTP ${response.status})`;
+      }
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
