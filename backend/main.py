@@ -314,6 +314,72 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
     return current_user
 
 
+def _build_document_context(task_ids: list, username: str) -> str:
+    """
+    Build document context from completed document tasks.
+
+    Retrieves extracted text and diagram analysis from document tasks
+    and formats them as additional context for design generation.
+
+    Args:
+        task_ids: List of document task IDs to include
+        username: Username for ownership verification
+
+    Returns:
+        Formatted document context string to prepend to requirements
+    """
+    if not task_ids:
+        return ""
+
+    context_parts = []
+
+    for task_id in task_ids:
+        task = get_task(task_id)
+
+        # Skip invalid, unowned, or incomplete tasks
+        if not task:
+            print(f"  ⚠️ Document task {task_id} not found, skipping")
+            continue
+        if task.username != username:
+            print(f"  ⚠️ Document task {task_id} belongs to another user, skipping")
+            continue
+        if task.status != TaskStatus.COMPLETED:
+            print(f"  ⚠️ Document task {task_id} not completed (status: {task.status.value}), skipping")
+            continue
+
+        # Build context for this document
+        doc_context = f"\n## Document: {task.filename}\n"
+
+        # Add extracted text
+        if task.extracted_text:
+            doc_context += f"\n### Content\n{task.extracted_text}\n"
+
+        # Add diagram analysis if available
+        if task.diagrams_found > 0 and task.diagram_summary:
+            doc_context += f"\n### Diagram Analysis\n{task.diagram_summary}\n"
+
+            # Add detailed diagram information for architecture understanding
+            for diagram in task.diagrams:
+                if diagram.get("analysis"):
+                    doc_context += f"\n**{diagram.get('diagram_id', 'Diagram')}:**\n"
+                    doc_context += f"- Type: {diagram.get('diagram_type', 'unknown')}\n"
+                    if diagram.get("components"):
+                        doc_context += f"- Components: {', '.join(diagram['components'][:15])}\n"
+                    if diagram.get("technologies"):
+                        doc_context += f"- Technologies: {', '.join(diagram['technologies'])}\n"
+                    if diagram.get("connections"):
+                        doc_context += f"- Data flows: {'; '.join(diagram['connections'][:10])}\n"
+
+        context_parts.append(doc_context)
+
+    if not context_parts:
+        return ""
+
+    # Format as reference documentation
+    header = "# Reference Documentation\n\nThe following documents have been provided as context for this architecture design:\n"
+    return header + "\n---\n".join(context_parts) + "\n\n---\n\n# User Requirements\n\n"
+
+
 async def _process_document_background(task_id: str, file_path: str):
     """Background task to process document with text and diagram extraction"""
     task = get_task(task_id)
@@ -583,9 +649,15 @@ async def design(request: Request, req: dict, current_user: User = Depends(get_c
       "text": "I need a web application with user authentication...",
       "scenario": "startup",
       "priorities": {"cost": "high", "security": "medium"},
-      "user_answers": "Optional answers to clarifying questions"
+      "user_answers": "Optional answers to clarifying questions",
+      "document_task_ids": ["abc-123", "def-456"]
     }
     ```
+
+    **Document context:** If `document_task_ids` is provided, the extracted text and
+    diagram analysis from those documents will be automatically included as context
+    for the design generation. This allows Carlos to understand existing architecture
+    diagrams and requirements documents.
 
     **Response includes:**
     - `design`: Primary architecture design document
@@ -600,9 +672,22 @@ async def design(request: Request, req: dict, current_user: User = Depends(get_c
     """
     print(f"Received request from {current_user.username}: {req}")
     try:
+        # Build document context if task IDs provided
+        document_context = ""
+        if req.get("document_task_ids"):
+            document_context = _build_document_context(
+                req["document_task_ids"],
+                current_user.username
+            )
+            if document_context:
+                print(f"📄 Including context from {len(req['document_task_ids'])} document(s)")
+
+        # Build requirements with document context
+        requirements_text = document_context + req["text"]
+
         # Build initial state
         initial_state = {
-            "requirements": req["text"],
+            "requirements": requirements_text,
             "conversation": "",
             "scenario": req.get("scenario"),
             "priorities": req.get("priorities", {}),
@@ -686,17 +771,32 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
     data: {"type": "complete", "summary": {...}, "timestamp": "..."}
     ```
 
+    **Document context:** If `document_task_ids` is provided in the request body,
+    the extracted text and diagram analysis from those documents will be automatically
+    included as context for the design generation.
+
     **Caching:** Common architecture patterns are cached for instant responses.
     Cache hits are indicated by the `X-Cache-Status: HIT` response header.
+    Note: Requests with document_task_ids bypass caching due to dynamic context.
 
     Rate limited to 10 requests per hour.
     """
     print(f"Received streaming request from {current_user.username}: {req}")
 
-    # Check cache for common patterns (skip if user provided answers - that's a follow-up)
+    # Build document context if task IDs provided
+    document_context = ""
+    if req.get("document_task_ids"):
+        document_context = _build_document_context(
+            req["document_task_ids"],
+            current_user.username
+        )
+        if document_context:
+            print(f"📄 Including context from {len(req['document_task_ids'])} document(s)")
+
+    # Check cache for common patterns (skip if user provided answers or document context)
     cache = get_cache()
     cache_key = None
-    if not req.get("user_answers"):
+    if not req.get("user_answers") and not document_context:
         cache_key = cache.generate_cache_key(
             req.get("text", ""),
             {
@@ -728,9 +828,12 @@ async def design_stream(request: Request, req: dict, current_user: User = Depend
     async def event_generator():
         final_state = {}
         try:
+            # Build requirements with document context
+            requirements_text = document_context + req["text"]
+
             # Build initial state
             initial_state = {
-                "requirements": req["text"],
+                "requirements": requirements_text,
                 "conversation": "",
                 "scenario": req.get("scenario"),
                 "priorities": req.get("priorities", {}),
