@@ -535,10 +535,19 @@ export default function App() {
           const statusData = await statusResponse.json();
 
           if (statusData.status === 'completed') {
+            // Ensure extracted_text is a string (prevent null/undefined from crashing React)
+            const extractedText = statusData.extracted_text || '';
+
+            if (!extractedText) {
+              console.error(`❌ Document ${file.name} completed but no text was extracted`);
+              setUploading(false);
+              return;
+            }
+
             // Merge extracted text with existing input
             const mergedText = input.trim()
-              ? `${input.trim()}\n\n${statusData.extracted_text}`
-              : statusData.extracted_text;
+              ? `${input.trim()}\n\n${extractedText}`
+              : extractedText;
 
             setInput(mergedText);
             setUploadedFile({ name: file.name, message: `✅ ${file.name} processed` });
