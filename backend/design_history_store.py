@@ -120,6 +120,7 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
 
         # Generate unique ID if not provided
         design_id = design.get("id") or str(uuid.uuid4())
+        print(f"  💾 Saving design {design_id} to Cosmos DB for user {username}")
 
         # Build the document
         document = {
@@ -155,8 +156,15 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
             "duration_seconds": design.get("duration_seconds"),
         }
 
-        await self._container.create_item(body=document)
-        return self._cosmos_to_design_dict(document)
+        try:
+            await self._container.create_item(body=document)
+            print(f"  ✅ Design {design_id} saved to Cosmos DB")
+            return self._cosmos_to_design_dict(document)
+        except Exception as e:
+            print(f"  ❌ Failed to save design {design_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     async def get_user_designs(self, username: str, limit: int = 50) -> List[dict]:
         """Get all designs for a user, ordered by creation date (newest first)."""
@@ -166,15 +174,14 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
 
         try:
             designs = []
-            # Use TOP instead of OFFSET/LIMIT for better Cosmos DB compatibility
+            # Simple query without ORDER BY to avoid composite index requirements
+            # We'll sort client-side
             query = """
-                SELECT TOP @limit * FROM c
+                SELECT * FROM c
                 WHERE c.username = @username AND c.type = 'design_history'
-                ORDER BY c.created_at DESC
             """
             params = [
                 {"name": "@username", "value": username},
-                {"name": "@limit", "value": limit},
             ]
 
             print(f"  📊 Querying designs for user: {username}")
@@ -183,6 +190,10 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
                 parameters=params,
             ):
                 designs.append(self._cosmos_to_design_dict(item))
+
+            # Sort by created_at descending (newest first) and apply limit
+            designs.sort(key=lambda d: d.get("created_at", ""), reverse=True)
+            designs = designs[:limit]
 
             print(f"  📊 Query returned {len(designs)} designs")
             return designs
