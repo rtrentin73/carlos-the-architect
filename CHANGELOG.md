@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.9...v0.2.10) (2026-01-26)
+
+
+### Bug Fixes
+
+* Add error handling to LangGraph agent nodes to prevent flow stalls ([8131d4b](https://github.com/rtrentin73/carlos-the-architect/commit/8131d4b5b1e7725890cbe5058474958e610f2512))
+* Add error handling to LangGraph agent nodes to prevent flow stalls ([0e52a6f](https://github.com/rtrentin73/carlos-the-architect/commit/0e52a6f99a01649f641ad6b6360feaa12436f363))
+
 ## [0.2.9](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.8...v0.2.9) (2026-01-26)
 
 
