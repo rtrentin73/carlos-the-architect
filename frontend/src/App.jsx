@@ -57,6 +57,7 @@ export default function App() {
   const [blueprintTab, setBlueprintTab] = useState("carlos");
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyPersistent, setHistoryPersistent] = useState(true);
   const [activityLog, setActivityLog] = useState([]);
   const [agentStatuses, setAgentStatuses] = useState({
     design: 'pending',
@@ -94,6 +95,7 @@ export default function App() {
 
       setHistoryLoading(true);
       try {
+        console.log("📚 Fetching design history...");
         const response = await fetch(`${backendBaseUrl}/history`, {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -102,6 +104,8 @@ export default function App() {
 
         if (response.ok) {
           const data = await response.json();
+          console.log(`📚 History response: ${data.count} designs, persistent: ${data.persistent}`);
+          setHistoryPersistent(data.persistent === true);
           // Transform backend data to match frontend format
           const transformedHistory = (data.designs || []).map(d => ({
             id: d.id,
@@ -130,9 +134,12 @@ export default function App() {
             title: d.title || ""
           }));
           setHistory(transformedHistory);
+        } else {
+          const errorText = await response.text();
+          console.error(`❌ History fetch failed (${response.status}): ${errorText}`);
         }
       } catch (error) {
-        console.error("Failed to fetch design history:", error);
+        console.error("❌ Failed to fetch design history:", error);
       } finally {
         setHistoryLoading(false);
       }
@@ -390,6 +397,7 @@ export default function App() {
         setHistory(updatedHistory);
 
         // Async save to backend
+        console.log(`💾 Saving design ${designId} to backend...`);
         fetch(`${backendBaseUrl}/history`, {
           method: 'POST',
           headers: {
@@ -420,12 +428,16 @@ export default function App() {
             total_tokens: totalTokens,
             duration_seconds: durationSeconds
           })
-        }).then(response => {
-          if (!response.ok) {
-            console.error("Failed to save design to backend");
+        }).then(async response => {
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`✅ Design ${designId} saved to backend (persistent: ${data.design?.id ? 'yes' : 'unknown'})`);
+          } else {
+            const errorText = await response.text();
+            console.error(`❌ Failed to save design to backend (${response.status}): ${errorText}`);
           }
         }).catch(error => {
-          console.error("Error saving design to backend:", error);
+          console.error("❌ Error saving design to backend:", error);
         });
         setAgentChat(summary.agent_chat || "");
         // Set terraform validation from summary (in case streaming was missed)
@@ -1232,7 +1244,19 @@ export default function App() {
             {currentView === "history" && (
               <div>
                 <h2 className="text-2xl font-bold mb-6 text-slate-800">Design History</h2>
-                {history.length === 0 ? (
+                {!historyPersistent && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-sm text-amber-800">
+                      <strong>⚠️ Note:</strong> Design history is stored in memory. Data will be lost when the server restarts. Configure Cosmos DB for persistent storage.
+                    </p>
+                  </div>
+                )}
+                {historyLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
+                    <span className="ml-3 text-slate-500">Loading history...</span>
+                  </div>
+                ) : history.length === 0 ? (
                   <p className="text-slate-400 italic">No designs yet. Create your first blueprint!</p>
                 ) : (
                   <div className="space-y-4">

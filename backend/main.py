@@ -1074,7 +1074,9 @@ async def save_design_to_history(
     """
     try:
         store = get_design_history_store()
+        print(f"💾 Saving design for {current_user.username} (persistent: {store.is_connected})")
         saved = await store.save_design(current_user.username, design)
+        print(f"✅ Design {saved.get('id')} saved for {current_user.username}")
         return {
             "status": "success",
             "design": saved,
@@ -1082,6 +1084,8 @@ async def save_design_to_history(
         }
     except Exception as e:
         print(f"❌ Error saving design to history: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to save design: {str(e)}"
@@ -1103,7 +1107,9 @@ async def get_design_history(
     """
     try:
         store = get_design_history_store()
+        print(f"📚 Getting design history for {current_user.username} (persistent: {store.is_connected})")
         designs = await store.get_user_designs(current_user.username, limit=limit)
+        print(f"📚 Found {len(designs)} designs for {current_user.username}")
         return {
             "designs": designs,
             "count": len(designs),
@@ -1111,6 +1117,8 @@ async def get_design_history(
         }
     except Exception as e:
         print(f"❌ Error getting design history: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve design history: {str(e)}"
