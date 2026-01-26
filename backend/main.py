@@ -398,6 +398,14 @@ async def _process_document_background(task_id: str, file_path: str):
                 analyze_with_vision=True  # Enable GPT-4 Vision analysis
             )
 
+            # Verify we actually extracted content
+            if not extracted_text or not extracted_text.strip():
+                raise ValueError(
+                    f"No text could be extracted from document. "
+                    f"Extraction method: {diagram_result.extraction_method}. "
+                    f"Details: {diagram_result.diagram_summary or 'Unknown error'}"
+                )
+
             # Convert diagrams to serializable dicts
             diagrams_data = [
                 {
@@ -431,6 +439,11 @@ async def _process_document_background(task_id: str, file_path: str):
         else:
             # Extract text only for non-diagram-supporting files
             extracted_text = extract_text_from_path(file_path)
+
+            # Verify we actually extracted content
+            if not extracted_text or not extracted_text.strip():
+                raise ValueError("No text could be extracted from document")
+
             task.update_status(
                 TaskStatus.COMPLETED,
                 extracted_text=extracted_text,
