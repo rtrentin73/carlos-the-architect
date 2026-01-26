@@ -54,6 +54,8 @@ chmod +x setup-backend.sh
 
 Go to your repository **Settings → Secrets and variables → Actions → Secrets**, and add:
 
+**Required Azure Secrets:**
+
 | Secret | Description |
 |--------|-------------|
 | `AZURE_CREDENTIALS` | Full JSON output from service principal creation |
@@ -63,6 +65,25 @@ Go to your repository **Settings → Secrets and variables → Actions → Secre
 | `AZURE_TENANT_ID` | `tenant` from service principal |
 | `AZURE_OPENAI_ENDPOINT` | Your Azure OpenAI endpoint URL |
 | `AZURE_OPENAI_API_KEY` | Your Azure OpenAI API key |
+
+**Required Application Secrets:**
+
+| Secret | Description |
+|--------|-------------|
+| `JWT_SECRET_KEY` | Secret key for JWT token signing (generate a random 32+ char string) |
+| `ADMIN_PASSWORD` | Password for default admin account (change from default `carlos-admin-2024`!) |
+| `VITE_BACKEND_URL` | Backend API URL for frontend (e.g., `http://YOUR_IP:8000`) - **must include port** |
+| `ALLOWED_ORIGINS` | CORS allowed origins (e.g., `http://YOUR_IP,http://localhost:5173`) |
+| `OAUTH_REDIRECT_BASE` | Frontend URL for OAuth redirects (e.g., `http://YOUR_IP`) |
+
+**Optional OAuth Secrets:**
+
+| Secret | Description |
+|--------|-------------|
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID (from Google Cloud Console) |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GITHUB_CLIENT_ID` | GitHub OAuth client ID (from GitHub Developer Settings) |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret |
 
 ### 4. Configure GitHub Variables (Optional)
 
@@ -138,6 +159,17 @@ az webapp log tail --name carlos-prod-backend --resource-group carlos-prod-rg
 ### CORS errors
 
 Ensure `ALLOWED_ORIGINS` in App Service settings includes your frontend URL.
+
+### "Cannot connect to server" error
+
+This error appears when the frontend cannot reach the backend. Common causes:
+
+1. **Missing port in VITE_BACKEND_URL**: Must include port (e.g., `http://20.245.72.209:8000`, not `http://20.245.72.209`)
+2. **VITE_BACKEND_URL is a build-time variable**: Changes require rebuilding the frontend Docker image
+3. **Backend not running**: Check App Service logs
+4. **Firewall blocking port 8000**: Ensure port 8000 is open in Azure NSG
+
+To verify the configured backend URL, open browser DevTools Console and check the network requests.
 
 ### Quota errors
 
