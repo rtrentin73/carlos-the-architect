@@ -241,6 +241,9 @@ app.add_middleware(
 # Session middleware for OAuth state management
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
+# Audit middleware for logging API requests
+app.add_middleware(AuditMiddleware)
+
 
 @app.get("/health", tags=["Health"], summary="Health check")
 async def health():
