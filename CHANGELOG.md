@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.11](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.10...v0.2.11) (2026-01-26)
+
+
+### Features
+
+* Add cancel button to stop design generation mid-stream ([9e29c4d](https://github.com/rtrentin73/carlos-the-architect/commit/9e29c4d7ce22a61594d2a9020bb11bed524717b6))
+* Add cancel button to stop design generation mid-stream ([238cf4e](https://github.com/rtrentin73/carlos-the-architect/commit/238cf4ecd29fef75de24b220d99a92acf9b42e68))
+
 ## [0.2.10](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.9...v0.2.10) (2026-01-26)
 
 
