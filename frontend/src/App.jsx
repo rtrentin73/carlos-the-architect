@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import mermaid from 'mermaid';
-import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode, Trash2, Clock, Hash } from 'lucide-react';
+import { Layout, Send, Cloud, ShieldCheck, PenTool, Loader2, MessageCircle, Activity, LogOut, User, Paperclip, X, Copy, Check, Zap, BarChart3, Shield, ChevronDown, ChevronUp, Code, FileCode, Trash2, Clock, Hash, Square } from 'lucide-react';
 import Splash from './components/Splash';
 import carlosBackground from './assets/splash.jpg';
 import LoginPage from './components/LoginPage';
@@ -27,6 +27,9 @@ export default function App() {
   const [uploadedFile, setUploadedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Abort controller for canceling design requests
+  const abortControllerRef = useRef(null);
 
   const [design, setDesign] = useState("");
   const [roneiDesign, setRoneiDesign] = useState("");
@@ -662,6 +665,9 @@ export default function App() {
     setIsDesigning(true);
     setDesignStartTime(Date.now());
 
+    // Create new AbortController for this request
+    abortControllerRef.current = new AbortController();
+
     // Save original requirements on first call
     if (!providedAnswers) {
       setOriginalRequirements(input);
@@ -698,6 +704,7 @@ export default function App() {
           "Authorization": `Bearer ${token}`,
         },
         body: JSON.stringify(requestBody),
+        signal: abortControllerRef.current.signal,
       });
 
       console.log("Response status:", response.status);
@@ -735,11 +742,28 @@ export default function App() {
         }
       }
     } catch (error) {
-      console.error("Error streaming design:", error);
-      setDesign("Error: Unable to generate design. Please check the backend and try again.");
+      if (error.name === 'AbortError') {
+        console.log("Design request was cancelled by user");
+        setActivityLog(prev => [...prev, {
+          timestamp: new Date().toISOString(),
+          type: 'cancelled',
+          message: 'Design generation cancelled by user'
+        }]);
+      } else {
+        console.error("Error streaming design:", error);
+        setDesign("Error: Unable to generate design. Please check the backend and try again.");
+      }
     } finally {
       setIsDesigning(false);
+      abortControllerRef.current = null;
       console.log("=== Design request complete ===");
+    }
+  };
+
+  const handleCancelDesign = () => {
+    if (abortControllerRef.current) {
+      console.log("Cancelling design request...");
+      abortControllerRef.current.abort();
     }
   };
 
@@ -1538,17 +1562,28 @@ export default function App() {
                 disabled={isDesigning}
               />
 
-              {/* Send button */}
-              <button
-                onClick={() => {
-                  console.log("Button clicked!");
-                  handleAskCarlos();
-                }}
-                disabled={isDesigning || !input.trim()}
-                className="p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all"
-              >
-                {isDesigning ? <Loader2 className="animate-spin" size={20}/> : <Send size={20}/>}
-              </button>
+              {/* Send/Cancel buttons */}
+              {isDesigning ? (
+                <button
+                  onClick={handleCancelDesign}
+                  className="p-4 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all flex items-center gap-2"
+                  title="Cancel design generation"
+                >
+                  <Square size={16} fill="currentColor" />
+                  <span className="text-sm font-medium">Stop</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    console.log("Button clicked!");
+                    handleAskCarlos();
+                  }}
+                  disabled={!input.trim()}
+                  className="p-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-all"
+                >
+                  <Send size={20}/>
+                </button>
+              )}
             </div>
           </div>
         </div>
