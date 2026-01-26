@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.8](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.7...v0.2.8) (2026-01-26)
+
+
+### Documentation
+
+* Update documentation with admin features and deployment config ([e82022e](https://github.com/rtrentin73/carlos-the-architect/commit/e82022e610c7ecf6de8b1fafc764b0869a707ebd))
+* Update documentation with admin features and deployment config ([2497748](https://github.com/rtrentin73/carlos-the-architect/commit/2497748f0d20a044eca3d22e3d9fc94f7be9251e))
+
 ## [0.2.7](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.6...v0.2.7) (2026-01-26)
 
 
