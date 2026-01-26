@@ -559,15 +559,15 @@ function UsersTab({ users, currentUser, loading, onRefresh, onAction }) {
         </button>
       </div>
 
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="border rounded-lg overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
           <thead className="bg-slate-100 text-left">
             <tr>
               <th className="px-4 py-3 font-semibold">Username</th>
               <th className="px-4 py-3 font-semibold">Email</th>
-              <th className="px-4 py-3 font-semibold">Role</th>
-              <th className="px-4 py-3 font-semibold">Status</th>
-              <th className="px-4 py-3 font-semibold">Actions</th>
+              <th className="px-4 py-3 font-semibold whitespace-nowrap">Role</th>
+              <th className="px-4 py-3 font-semibold whitespace-nowrap">Status</th>
+              <th className="px-4 py-3 font-semibold whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -603,7 +603,7 @@ function UsersTab({ users, currentUser, loading, onRefresh, onAction }) {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">
                   {u.username !== currentUser.username && (
                     <div className="flex items-center gap-1">
                       {u.is_admin ? (
