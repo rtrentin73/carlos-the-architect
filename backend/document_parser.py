@@ -1,17 +1,26 @@
-"""Document parsing utilities for extracting text from various file formats."""
+"""Document parsing utilities for extracting text and diagrams from various file formats."""
 import io
 import os
-from typing import Optional
+from typing import Optional, Tuple
 from fastapi import UploadFile, HTTPException
 from pypdf import PdfReader
 from docx import Document
 import openpyxl
+
+from diagram_extraction import (
+    DiagramExtractionResult,
+    extract_diagrams_with_document_intelligence,
+    extract_diagrams_from_path as _extract_diagrams_from_path,
+)
 
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB (increased for async processing)
 
 # Supported image extensions for Azure AI Document Intelligence
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp"}
+
+# File types that support diagram extraction (PDFs and images)
+DIAGRAM_EXTRACTABLE_EXTENSIONS = {"pdf"} | IMAGE_EXTENSIONS
 
 
 def _is_azure_document_intelligence_configured() -> bool:
@@ -334,3 +343,103 @@ def extract_text_from_path(file_path: str) -> str:
 
     except Exception as e:
         raise ValueError(f"Error processing file: {str(e)}")
+
+
+def extract_text_and_diagrams_from_path(
+    file_path: str,
+    analyze_with_vision: bool = True
+) -> Tuple[str, DiagramExtractionResult]:
+    """
+    Extract both text and diagrams from a file path.
+
+    For PDF and image files, uses Azure Document Intelligence with the
+    prebuilt-layout model to detect figures and extract text. Optionally
+    analyzes diagrams with GPT-4 Vision.
+
+    For other file types, extracts text only (no diagram detection).
+
+    Args:
+        file_path: Absolute path to the file
+        analyze_with_vision: Whether to analyze diagrams with GPT-4 Vision
+
+    Returns:
+        Tuple of (extracted_text, diagram_extraction_result)
+    """
+    if not os.path.exists(file_path):
+        raise ValueError(f"File not found: {file_path}")
+
+    file_size = os.path.getsize(file_path)
+    if file_size == 0:
+        raise ValueError("File is empty")
+
+    if file_size > MAX_FILE_SIZE:
+        raise ValueError(f"File too large. Maximum size is {MAX_FILE_SIZE / 1024 / 1024}MB")
+
+    extension = file_path.lower().split(".")[-1] if "." in file_path else ""
+    filename = os.path.basename(file_path)
+
+    # For diagram-extractable files (PDF and images), use diagram extraction
+    if extension in DIAGRAM_EXTRACTABLE_EXTENSIONS:
+        if not _is_azure_document_intelligence_configured():
+            # Fall back to text-only extraction for PDFs
+            if extension == "pdf":
+                text = extract_text_from_path(file_path)
+                return text, DiagramExtractionResult(
+                    document_name=filename,
+                    extraction_method="text-only",
+                    text_content=text,
+                    diagram_summary="Azure AI Document Intelligence not configured. Diagram extraction requires configuration."
+                )
+            else:
+                raise ValueError(
+                    "Image and diagram extraction requires Azure AI Document Intelligence. "
+                    "Please configure AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY."
+                )
+
+        # Use diagram extraction (which also extracts text)
+        result = _extract_diagrams_from_path(file_path, analyze_with_vision)
+        return result.text_content, result
+
+    # For other file types, extract text only
+    text = extract_text_from_path(file_path)
+    return text, DiagramExtractionResult(
+        document_name=filename,
+        extraction_method="text-only",
+        text_content=text,
+        diagram_summary="File type does not support diagram extraction."
+    )
+
+
+def supports_diagram_extraction(filename: str) -> bool:
+    """
+    Check if a file type supports diagram extraction.
+
+    Args:
+        filename: Filename to check
+
+    Returns:
+        True if the file type supports diagram extraction
+    """
+    extension = filename.lower().split(".")[-1] if "." in filename else ""
+    return extension in DIAGRAM_EXTRACTABLE_EXTENSIONS
+
+
+def get_diagram_extraction_status() -> dict:
+    """
+    Get the current status of diagram extraction capabilities.
+
+    Returns:
+        Dictionary with configuration status
+    """
+    from diagram_extraction import _is_vision_analysis_configured
+
+    return {
+        "document_intelligence_configured": _is_azure_document_intelligence_configured(),
+        "vision_analysis_configured": _is_vision_analysis_configured(),
+        "supported_extensions": list(DIAGRAM_EXTRACTABLE_EXTENSIONS),
+        "capabilities": {
+            "text_extraction": True,
+            "diagram_detection": _is_azure_document_intelligence_configured(),
+            "diagram_analysis": _is_vision_analysis_configured(),
+        }
+    }

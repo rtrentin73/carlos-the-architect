@@ -57,7 +57,13 @@ from auth import (
 from oauth import oauth, OAUTH_REDIRECT_BASE, is_google_enabled, is_github_enabled
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import RedirectResponse
-from document_parser import extract_text_from_path, MAX_FILE_SIZE
+from document_parser import (
+    extract_text_from_path,
+    extract_text_and_diagrams_from_path,
+    supports_diagram_extraction,
+    get_diagram_extraction_status,
+    MAX_FILE_SIZE,
+)
 from document_tasks import create_task, get_task, get_user_tasks, TaskStatus
 from middleware.rate_limit import limiter, rate_limit_exceeded_handler
 from middleware.audit import AuditMiddleware
@@ -309,7 +315,7 @@ async def get_me(current_user: User = Depends(get_current_active_user)):
 
 
 async def _process_document_background(task_id: str, file_path: str):
-    """Background task to process document"""
+    """Background task to process document with text and diagram extraction"""
     task = get_task(task_id)
     if not task:
         return
@@ -318,12 +324,53 @@ async def _process_document_background(task_id: str, file_path: str):
         task.update_status(TaskStatus.PROCESSING)
         print(f"📄 Processing document {task.filename} for task {task_id}")
 
-        # Extract text from file
-        extracted_text = extract_text_from_path(file_path)
+        # Check if file supports diagram extraction
+        if supports_diagram_extraction(task.filename):
+            # Extract text AND diagrams
+            extracted_text, diagram_result = extract_text_and_diagrams_from_path(
+                file_path,
+                analyze_with_vision=True  # Enable GPT-4 Vision analysis
+            )
 
-        # Update task with result
-        task.update_status(TaskStatus.COMPLETED, extracted_text=extracted_text)
-        print(f"✅ Document {task.filename} processed successfully (task {task_id})")
+            # Convert diagrams to serializable dicts
+            diagrams_data = [
+                {
+                    "diagram_id": d.diagram_id,
+                    "page_number": d.page_number,
+                    "caption": d.caption,
+                    "diagram_type": d.diagram_type.value if d.diagram_type else "unknown",
+                    "confidence": d.confidence,
+                    "analysis": d.analysis,
+                    "components": d.components,
+                    "connections": d.connections,
+                    "technologies": d.technologies,
+                }
+                for d in diagram_result.diagrams
+            ]
+
+            # Update task with text and diagram results
+            task.update_status(
+                TaskStatus.COMPLETED,
+                extracted_text=extracted_text,
+                diagrams_found=diagram_result.diagrams_found,
+                diagrams=diagrams_data,
+                diagram_summary=diagram_result.diagram_summary,
+                extraction_method=diagram_result.extraction_method
+            )
+
+            if diagram_result.diagrams_found > 0:
+                print(f"✅ Document {task.filename} processed: {len(extracted_text)} chars, {diagram_result.diagrams_found} diagrams (task {task_id})")
+            else:
+                print(f"✅ Document {task.filename} processed: {len(extracted_text)} chars, no diagrams found (task {task_id})")
+        else:
+            # Extract text only for non-diagram-supporting files
+            extracted_text = extract_text_from_path(file_path)
+            task.update_status(
+                TaskStatus.COMPLETED,
+                extracted_text=extracted_text,
+                extraction_method="text-only"
+            )
+            print(f"✅ Document {task.filename} processed: {len(extracted_text)} chars (task {task_id})")
 
     except Exception as e:
         error_msg = str(e)
@@ -348,28 +395,43 @@ async def upload_document(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Upload a document for asynchronous text extraction.
+    Upload a document for asynchronous text and diagram extraction.
 
     **Supported formats:** PDF, DOCX, TXT, MD, XLSX, PNG, JPG, JPEG, GIF, BMP, TIFF, WEBP
 
     **Size limit:** 50MB
 
-    **Azure AI Document Intelligence (optional):**
+    **Diagram Extraction (PDFs and images):**
+    When Azure AI Document Intelligence is configured with the `prebuilt-layout` model:
+    - Automatically detects diagrams, flowcharts, and architectural figures
+    - Extracts diagram metadata (page number, caption, bounding box)
+    - Reports confidence score for each detected diagram
+
+    **GPT-4 Vision Analysis (optional):**
+    When Azure OpenAI GPT-4 Vision is configured:
+    - Analyzes detected diagrams to identify components and connections
+    - Classifies diagram types (architecture, flowchart, sequence, etc.)
+    - Extracts technologies and services shown in diagrams
+
+    **Azure AI Document Intelligence (required for images/diagram detection):**
     - **Images:** Required for PNG, JPG, etc. - provides OCR text extraction
-    - **PDFs:** Enhanced extraction for scanned PDFs and embedded images/diagrams
+    - **PDFs:** Enhanced extraction for scanned PDFs, embedded images, and diagrams
     - Falls back to standard text extraction for PDFs if not configured
 
     **Without Azure AI Document Intelligence:**
     - Image uploads will return an error
-    - PDFs use pypdf (text-based PDFs only, no OCR for scanned pages)
+    - PDFs use pypdf (text-based PDFs only, no OCR or diagram detection)
 
     Documents are processed in the background. After uploading:
     1. You receive a `task_id` immediately
     2. Poll `GET /documents/{task_id}` to check processing status
-    3. Once complete, the extracted text is available in the response
+    3. Once complete, the response includes:
+       - `extracted_text`: Full text content
+       - `diagrams_found`: Number of diagrams detected
+       - `diagrams`: Array of diagram details (page, caption, type, analysis)
+       - `diagram_summary`: Summary of all detected diagrams
 
-    The extracted text can be included in design requests to provide context
-    about existing infrastructure or requirements.
+    Use `GET /documents/diagram-capabilities` to check if diagram extraction is configured.
 
     Rate limited to 30 uploads per hour.
     """
@@ -467,6 +529,38 @@ async def list_user_documents(
         "tasks": [task.to_dict() for task in tasks],
         "count": len(tasks)
     }
+
+
+@app.get("/documents/diagram-capabilities", tags=["Documents"], summary="Get diagram extraction capabilities")
+async def get_diagram_capabilities(
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Check the current diagram extraction capabilities.
+
+    Returns information about:
+    - Whether Azure Document Intelligence is configured (required for diagram detection)
+    - Whether GPT-4 Vision is configured (optional, for diagram analysis)
+    - Supported file extensions for diagram extraction
+
+    **Example response:**
+    ```json
+    {
+        "document_intelligence_configured": true,
+        "vision_analysis_configured": true,
+        "supported_extensions": ["pdf", "png", "jpg", "jpeg", ...],
+        "capabilities": {
+            "text_extraction": true,
+            "diagram_detection": true,
+            "diagram_analysis": true
+        }
+    }
+    ```
+
+    Use this endpoint to verify diagram extraction is properly configured
+    before uploading documents with diagrams.
+    """
+    return get_diagram_extraction_status()
 
 
 @app.post("/design", tags=["Design"], summary="Generate architecture design (synchronous)")

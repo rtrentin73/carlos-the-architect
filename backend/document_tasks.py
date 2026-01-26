@@ -6,7 +6,7 @@ Uses in-memory storage (can be migrated to Redis/Cosmos for production).
 """
 
 from enum import Enum
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
 from datetime import datetime, timezone
 import uuid
 
@@ -33,9 +33,15 @@ class DocumentTask:
         self.updated_at = datetime.now(timezone.utc)
         self.file_size: Optional[int] = None
 
+        # Diagram extraction fields
+        self.diagrams_found: int = 0
+        self.diagrams: List[Dict[str, Any]] = []
+        self.diagram_summary: Optional[str] = None
+        self.extraction_method: str = "none"
+
     def to_dict(self) -> dict:
         """Convert task to dictionary for API responses"""
-        return {
+        result = {
             "task_id": self.task_id,
             "filename": self.filename,
             "status": self.status.value,
@@ -46,7 +52,25 @@ class DocumentTask:
             "file_size": self.file_size
         }
 
-    def update_status(self, status: TaskStatus, error: Optional[str] = None, extracted_text: Optional[str] = None):
+        # Include diagram data if extraction completed
+        if self.status == TaskStatus.COMPLETED:
+            result["diagrams_found"] = self.diagrams_found
+            result["diagrams"] = self.diagrams
+            result["diagram_summary"] = self.diagram_summary
+            result["extraction_method"] = self.extraction_method
+
+        return result
+
+    def update_status(
+        self,
+        status: TaskStatus,
+        error: Optional[str] = None,
+        extracted_text: Optional[str] = None,
+        diagrams_found: int = 0,
+        diagrams: Optional[List[Dict[str, Any]]] = None,
+        diagram_summary: Optional[str] = None,
+        extraction_method: str = "none"
+    ):
         """Update task status and timestamp"""
         self.status = status
         self.updated_at = datetime.now(timezone.utc)
@@ -54,6 +78,12 @@ class DocumentTask:
             self.error = error
         if extracted_text:
             self.extracted_text = extracted_text
+
+        # Update diagram fields
+        self.diagrams_found = diagrams_found
+        self.diagrams = diagrams or []
+        self.diagram_summary = diagram_summary
+        self.extraction_method = extraction_method
 
 
 # In-memory task storage
