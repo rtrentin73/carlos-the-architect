@@ -398,6 +398,31 @@ def extract_text_and_diagrams_from_path(
 
         # Use diagram extraction (which also extracts text)
         result = _extract_diagrams_from_path(file_path, analyze_with_vision)
+
+        # Check if diagram extraction failed - fall back to text-only extraction
+        if result.extraction_method == "error" or not result.text_content.strip():
+            print(f"  ⚠️ Diagram extraction failed, falling back to text-only extraction")
+            try:
+                # For PDFs, fall back to pypdf extraction
+                if extension == "pdf":
+                    text = extract_text_from_path(file_path)
+                    return text, DiagramExtractionResult(
+                        document_name=filename,
+                        extraction_method="text-only-fallback",
+                        text_content=text,
+                        diagram_summary=f"Diagram extraction failed ({result.diagram_summary}). Used fallback text extraction."
+                    )
+                else:
+                    # For images, we can't fall back - raise an error
+                    raise ValueError(
+                        f"Failed to extract content from image: {result.diagram_summary}"
+                    )
+            except Exception as fallback_error:
+                raise ValueError(
+                    f"Diagram extraction failed and fallback also failed: {result.diagram_summary}. "
+                    f"Fallback error: {str(fallback_error)}"
+                )
+
         return result.text_content, result
 
     # For other file types, extract text only
