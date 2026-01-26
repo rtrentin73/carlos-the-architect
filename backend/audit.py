@@ -244,8 +244,7 @@ class CosmosDBauditStore:
         try:
             async for item in self._container.query_items(
                 query=query,
-                parameters=query_params,
-                enable_cross_partition_query=True
+                parameters=query_params
             ):
                 # Convert to AuditRecord
                 item.pop("_partition_key", None)
@@ -288,8 +287,7 @@ class CosmosDBauditStore:
             """
             total_events = 0
             async for item in self._container.query_items(
-                query=total_query,
-                enable_cross_partition_query=True
+                query=total_query
             ):
                 total_events = item
 
@@ -305,8 +303,7 @@ class CosmosDBauditStore:
             unique_usernames = set()
 
             async for item in self._container.query_items(
-                query=base_query,
-                enable_cross_partition_query=True
+                query=base_query
             ):
                 # Count by action
                 action = item.get("action")
