@@ -18,6 +18,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Pre-cleanup: Delete the release-please branch if it exists
+      # This prevents the "Error updating ref" issue caused by branch protection
+      - name: Cleanup stale release-please branch
+        continue-on-error: true
+        run: |
+          git push origin --delete release-please--branches--main 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Release Please
         id: release
         uses: googleapis/release-please-action@v4
