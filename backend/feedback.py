@@ -254,8 +254,7 @@ class CosmosDBFeedbackStore:
             results = []
             async for item in self._container.query_items(
                 query=query,
-                parameters=parameters,
-                enable_cross_partition_query=True
+                parameters=parameters
             ):
                 results.append(StoredFeedback(**item))
 
@@ -284,8 +283,7 @@ class CosmosDBFeedbackStore:
             total_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'deployment_feedback'"
             total_feedback = 0
             async for item in self._container.query_items(
-                query=total_query,
-                enable_cross_partition_query=True
+                query=total_query
             ):
                 total_feedback = item
 
@@ -293,8 +291,7 @@ class CosmosDBFeedbackStore:
             deployed_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'deployment_feedback' AND c.deployed = true"
             deployed_count = 0
             async for item in self._container.query_items(
-                query=deployed_query,
-                enable_cross_partition_query=True
+                query=deployed_query
             ):
                 deployed_count = item
 
@@ -302,8 +299,7 @@ class CosmosDBFeedbackStore:
             success_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'deployment_feedback' AND c.deployed = true AND c.success = true"
             successful = 0
             async for item in self._container.query_items(
-                query=success_query,
-                enable_cross_partition_query=True
+                query=success_query
             ):
                 successful = item
 
@@ -314,8 +310,7 @@ class CosmosDBFeedbackStore:
             rating_query = "SELECT VALUE AVG(c.satisfaction_rating) FROM c WHERE c.type = 'deployment_feedback'"
             avg_satisfaction = 0
             async for item in self._container.query_items(
-                query=rating_query,
-                enable_cross_partition_query=True
+                query=rating_query
             ):
                 avg_satisfaction = item or 0
 
@@ -328,8 +323,7 @@ class CosmosDBFeedbackStore:
             rating_distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
             rating_dist_query = "SELECT c.satisfaction_rating FROM c WHERE c.type = 'deployment_feedback'"
             async for item in self._container.query_items(
-                query=rating_dist_query,
-                enable_cross_partition_query=True
+                query=rating_dist_query
             ):
                 rating = item.get("satisfaction_rating")
                 if rating and 1 <= rating <= 5:
@@ -372,8 +366,7 @@ class CosmosDBFeedbackStore:
 
             issues_count = {}
             async for item in self._container.query_items(
-                query=query,
-                enable_cross_partition_query=True
+                query=query
             ):
                 if item.get("issues_encountered"):
                     for issue in item["issues_encountered"]:
