@@ -133,6 +133,12 @@ async def set_user_disabled(username: str, disabled: bool) -> Optional[User]:
     )
 
 
+async def delete_user(username: str) -> bool:
+    """Delete a user account permanently. Returns True if deleted, False if not found."""
+    store = get_user_store()
+    return await store.delete_user(username)
+
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 

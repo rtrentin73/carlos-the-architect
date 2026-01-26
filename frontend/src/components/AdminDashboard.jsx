@@ -3,7 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Shield, Users, Activity, Download, Search, RefreshCw,
   AlertTriangle, CheckCircle, XCircle, UserPlus, UserMinus,
-  Lock, Unlock, ChevronLeft, ChevronRight, Filter
+  Lock, Unlock, ChevronLeft, ChevronRight, Filter, Trash2
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -105,8 +105,17 @@ export default function AdminDashboard() {
 
   const handleUserAction = async (username, action) => {
     try {
-      const response = await fetch(`${backendBaseUrl}/admin/users/${username}/${action}`, {
-        method: 'POST',
+      let url, method;
+      if (action === 'delete') {
+        url = `${backendBaseUrl}/admin/users/${username}`;
+        method = 'DELETE';
+      } else {
+        url = `${backendBaseUrl}/admin/users/${username}/${action}`;
+        method = 'POST';
+      }
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -516,6 +525,19 @@ function AuditLogsTab({ logs, filters, setFilters, loading, onRefresh, onExport 
 }
 
 function UsersTab({ users, currentUser, loading, onRefresh, onAction }) {
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  const handleDelete = (username) => {
+    if (deleteConfirm === username) {
+      onAction(username, 'delete');
+      setDeleteConfirm(null);
+    } else {
+      setDeleteConfirm(username);
+      // Auto-clear confirmation after 3 seconds
+      setTimeout(() => setDeleteConfirm(null), 3000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -622,6 +644,18 @@ function UsersTab({ users, currentUser, loading, onRefresh, onAction }) {
                           Disable
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(u.username)}
+                        className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${
+                          deleteConfirm === u.username
+                            ? 'bg-red-600 text-white'
+                            : 'text-red-700 hover:bg-red-50'
+                        }`}
+                        title={deleteConfirm === u.username ? 'Click again to confirm' : 'Delete user permanently'}
+                      >
+                        <Trash2 size={14} />
+                        {deleteConfirm === u.username ? 'Confirm?' : 'Delete'}
+                      </button>
                     </div>
                   )}
                 </td>

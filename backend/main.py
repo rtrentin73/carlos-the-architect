@@ -51,6 +51,7 @@ from auth import (
     get_all_users,
     set_user_admin,
     set_user_disabled,
+    delete_user,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     SECRET_KEY,
 )
@@ -1812,3 +1813,30 @@ async def disable_user(
         )
 
     return {"message": f"User {username} disabled", "user": user.model_dump()}
+
+
+@app.delete("/admin/users/{username}", tags=["Admin"], summary="Delete user account")
+async def delete_user_endpoint(
+    username: str,
+    current_user: User = Depends(require_admin)
+):
+    """
+    Permanently delete a user account. **Admin only.**
+
+    This action is irreversible. The user's account and all associated data will be removed.
+    You cannot delete your own account.
+    """
+    if username == current_user.username:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete your own account"
+        )
+
+    deleted = await delete_user(username)
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    return {"message": f"User {username} deleted successfully"}

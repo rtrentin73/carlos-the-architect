@@ -57,6 +57,11 @@ class UserStoreBase(ABC):
         """Get all users (for admin)."""
         pass
 
+    @abstractmethod
+    async def delete_user(self, username: str) -> bool:
+        """Delete a user by username. Returns True if deleted, False if not found."""
+        pass
+
     @property
     @abstractmethod
     def is_connected(self) -> bool:
@@ -244,6 +249,38 @@ class CosmosDBUserStore(UserStoreBase):
             print(f"  Error getting all users: {e}")
             return []
 
+    async def delete_user(self, username: str) -> bool:
+        """Delete a user by username."""
+        if not self._connected or not self._container:
+            return False
+
+        try:
+            # First get the document to find its ID
+            query = "SELECT * FROM c WHERE c.username = @username AND c.type = 'user'"
+            params = [{"name": "@username", "value": username}]
+
+            doc_to_delete = None
+            async for item in self._container.query_items(
+                query=query,
+                parameters=params,
+            ):
+                doc_to_delete = item
+                break
+
+            if not doc_to_delete:
+                return False
+
+            # Delete the document using ID and partition key (username)
+            await self._container.delete_item(
+                item=doc_to_delete["id"],
+                partition_key=username,
+            )
+            print(f"  Deleted user from Cosmos DB: {username}")
+            return True
+        except Exception as e:
+            print(f"  Error deleting user {username}: {e}")
+            return False
+
     def _cosmos_to_user_dict(self, item: dict) -> dict:
         """Convert Cosmos DB document to user dict."""
         return {
@@ -301,6 +338,13 @@ class InMemoryUserStore(UserStoreBase):
 
     async def get_all_users(self) -> List[dict]:
         return list(self._users.values())
+
+    async def delete_user(self, username: str) -> bool:
+        """Delete a user by username."""
+        if username in self._users:
+            del self._users[username]
+            return True
+        return False
 
     @property
     def is_connected(self) -> bool:
