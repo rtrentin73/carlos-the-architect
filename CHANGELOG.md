@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.3...v0.2.4) (2026-01-26)
+
+
+### Features
+
+* Add gzip compression for design history storage ([88d98f1](https://github.com/rtrentin73/carlos-the-architect/commit/88d98f1e57d25ac409110f51fea7e6789a02b715))
+
+
+### Bug Fixes
+
+* Add better logging and UI for design history debugging ([c4238f1](https://github.com/rtrentin73/carlos-the-architect/commit/c4238f1624eeecf74f57125488faf539c59879a0))
+* Simplify Cosmos DB query and add more debugging for design history ([9c76100](https://github.com/rtrentin73/carlos-the-architect/commit/9c761004a02a89ceb5127d0dada1dbcc47cb6557))
+* Truncate large fields to fit Cosmos DB 2MB document limit ([a180b29](https://github.com/rtrentin73/carlos-the-architect/commit/a180b292aa5722a329135dce785f9f6a8ea4ed81))
+
 ## [0.2.3](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.2...v0.2.3) (2026-01-26)
 
 
