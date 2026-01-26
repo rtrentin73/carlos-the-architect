@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.4...v0.2.5) (2026-01-26)
+
+
+### Bug Fixes
+
+* Improve error handling for registration and login failures ([b716e54](https://github.com/rtrentin73/carlos-the-architect/commit/b716e543e4a7895a516e4b6a8a2b995c912bb18d))
+* Improve error handling for registration and login failures ([4c58b45](https://github.com/rtrentin73/carlos-the-architect/commit/4c58b456690f9223953430077f5e85d2f8ad3ae6))
+
 ## [0.2.4](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.3...v0.2.4) (2026-01-26)
 
 
