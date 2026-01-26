@@ -240,6 +240,32 @@ You should see the Carlos AI splash screen, then the main dashboard.
 
 ---
 
+## Authentication & User Management
+
+Carlos includes a complete authentication system with local accounts and OAuth support.
+
+### User Registration
+- Users can register with username/password on the login page
+- OAuth login with Google and GitHub (when configured)
+
+### Admin Dashboard
+Admins have access to a dedicated dashboard with:
+
+- **Overview Tab**: Audit statistics including total events, unique users, error counts, and events by severity/action
+- **Audit Logs Tab**: Searchable and filterable logs of all API requests with export to JSON/CSV
+- **User Management Tab**: View all users, promote/demote admins, enable/disable accounts, and delete users
+
+To access the admin dashboard, log in as an admin user and click the shield icon in the sidebar.
+
+### Default Admin Account
+On first startup, a default admin account is created:
+- Username: `admin` (configurable via `ADMIN_USERNAME`)
+- Password: `carlos-admin-2024` (configurable via `ADMIN_PASSWORD`)
+
+**Important:** Change the default admin password in production by setting `ADMIN_PASSWORD` environment variable.
+
+---
+
 ## Troubleshooting
 
 - **Backend 500 or `error` in response**
@@ -247,8 +273,15 @@ You should see the Carlos AI splash screen, then the main dashboard.
   - Confirm the deployment name and API version match what you actually provisioned.
 
 - **CORS / network issues**
-  - Frontend expects the backend at `http://localhost:8000`.
-  - CORS in `backend/main.py` allows `http://localhost:5173` and `http://localhost:5174`.
+  - Frontend expects the backend at `http://localhost:8000` (configurable via `VITE_BACKEND_URL`).
+  - CORS in `backend/main.py` allows origins specified in `ALLOWED_ORIGINS` environment variable.
+  - Default CORS origins: `http://localhost:5173` and `http://localhost:5174`.
+  - For production, set both `VITE_BACKEND_URL` (build-time) and `ALLOWED_ORIGINS` (runtime).
+
+- **"Cannot connect to server" error in production**
+  - Ensure `VITE_BACKEND_URL` includes the port (e.g., `http://20.245.72.209:8000`, not `http://20.245.72.209`).
+  - `VITE_BACKEND_URL` is a **build-time** variable - changes require rebuilding the frontend.
+  - Ensure `ALLOWED_ORIGINS` on the backend includes your frontend URL.
 
 - **No designs in history after refresh**
   - History is stored in `localStorage` (`designHistory` key); clearing browser storage will remove it.
@@ -297,6 +330,24 @@ See `.github/workflows/deploy-azure.yml` for the complete CI/CD pipeline.
 
 ### Required GitHub Secrets for Deployment
 
+**Azure Authentication:**
 - `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`
 - `AZURE_CREDENTIALS` (service principal JSON)
+
+**Azure OpenAI:**
 - `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_DEPLOYMENT_NAME` (default: `gpt-4o`)
+- `AZURE_OPENAI_MINI_DEPLOYMENT_NAME` (default: `gpt-4o-mini`, for cost optimization)
+
+**Frontend/Backend Configuration:**
+- `VITE_BACKEND_URL` - Backend API URL for frontend (e.g., `http://20.245.72.209:8000`)
+- `ALLOWED_ORIGINS` - CORS allowed origins (e.g., `http://20.245.72.209,http://localhost:5173`)
+- `OAUTH_REDIRECT_BASE` - Frontend URL for OAuth redirects (e.g., `http://20.245.72.209`)
+
+**Authentication:**
+- `JWT_SECRET_KEY` - Secret key for JWT token signing
+- `ADMIN_PASSWORD` - Password for default admin account (change from default!)
+
+**OAuth (optional):**
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` - For Google OAuth
+- `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` - For GitHub OAuth
