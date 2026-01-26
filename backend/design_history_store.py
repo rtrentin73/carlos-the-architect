@@ -113,6 +113,15 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
             await self._client.close()
             self._connected = False
 
+    def _truncate_field(self, value: Optional[str], max_chars: int = 100000) -> Optional[str]:
+        """Truncate a string field to fit within Cosmos DB limits."""
+        if value is None:
+            return None
+        if len(value) <= max_chars:
+            return value
+        # Truncate and add indicator
+        return value[:max_chars] + "\n\n... [truncated due to size limits]"
+
     async def save_design(self, username: str, design: dict) -> dict:
         """Save a design to history."""
         if not self._connected or not self._container:
@@ -122,21 +131,25 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
         design_id = design.get("id") or str(uuid.uuid4())
         print(f"  💾 Saving design {design_id} to Cosmos DB for user {username}")
 
-        # Build the document
+        # Truncate large fields to stay under Cosmos DB 2MB document limit
+        # Reserve ~200KB for metadata, allow ~300KB per large field
+        max_field_size = 300000  # ~300KB per field
+
+        # Build the document with truncated fields
         document = {
             "id": design_id,
             "type": "design_history",
             "username": username,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "requirements": design.get("requirements"),
+            "requirements": self._truncate_field(design.get("requirements"), 50000),
             "cloud_provider": design.get("cloud_provider"),
             "environment": design.get("environment"),
-            "architecture": design.get("architecture"),
-            "terraform": design.get("terraform"),
-            "diagram_svg": design.get("diagram_svg"),
-            "cost_estimate": design.get("cost_estimate"),
-            "security_analysis": design.get("security_analysis"),
-            "reliability_analysis": design.get("reliability_analysis"),
+            "architecture": self._truncate_field(design.get("architecture"), max_field_size),
+            "terraform": self._truncate_field(design.get("terraform"), max_field_size),
+            "diagram_svg": None,  # Don't store SVGs - too large
+            "cost_estimate": self._truncate_field(design.get("cost_estimate"), 50000),
+            "security_analysis": self._truncate_field(design.get("security_analysis"), 50000),
+            "reliability_analysis": self._truncate_field(design.get("reliability_analysis"), 50000),
             "title": design.get("title") or self._generate_title(design),
             # Additional fields from frontend
             "scenario": design.get("scenario"),
@@ -144,12 +157,12 @@ class CosmosDBDesignHistoryStore(DesignHistoryStoreBase):
             "compliance_level": design.get("compliance_level"),
             "reliability_level": design.get("reliability_level"),
             "strictness_level": design.get("strictness_level"),
-            "ronei_design": design.get("ronei_design"),
+            "ronei_design": self._truncate_field(design.get("ronei_design"), max_field_size),
             "audit_status": design.get("audit_status"),
-            "audit_report": design.get("audit_report"),
-            "recommendation": design.get("recommendation"),
-            "terraform_validation": design.get("terraform_validation"),
-            "agent_chat": design.get("agent_chat"),
+            "audit_report": self._truncate_field(design.get("audit_report"), 50000),
+            "recommendation": self._truncate_field(design.get("recommendation"), 50000),
+            "terraform_validation": self._truncate_field(design.get("terraform_validation"), 50000),
+            "agent_chat": self._truncate_field(design.get("agent_chat"), max_field_size),
             "carlos_tokens": design.get("carlos_tokens"),
             "ronei_tokens": design.get("ronei_tokens"),
             "total_tokens": design.get("total_tokens"),
