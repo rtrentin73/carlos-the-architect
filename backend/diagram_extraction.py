@@ -10,6 +10,7 @@ and other visual elements in requirements documents.
 """
 
 import base64
+import io
 import os
 from typing import List, Optional, Tuple
 from pydantic import BaseModel, Field
@@ -74,6 +75,146 @@ def _is_vision_analysis_configured() -> bool:
     key = os.getenv("AZURE_OPENAI_API_KEY")
     deployment = os.getenv("AZURE_OPENAI_VISION_DEPLOYMENT", "gpt-4o")
     return bool(endpoint and key and deployment)
+
+
+def _extract_figure_image_from_pdf(
+    pdf_content: bytes,
+    page_number: int,
+    bounding_box: Optional[BoundingBox],
+    dpi: int = 150
+) -> Optional[str]:
+    """
+    Extract a figure region from a PDF page as a base64-encoded PNG image.
+
+    Uses PyMuPDF (fitz) to render the PDF page and crop the figure region.
+
+    Args:
+        pdf_content: PDF file bytes
+        page_number: 1-indexed page number
+        bounding_box: Bounding box coordinates (in inches from Document Intelligence)
+        dpi: Resolution for rendering (higher = better quality but larger size)
+
+    Returns:
+        Base64-encoded PNG image data, or None if extraction fails
+    """
+    try:
+        import fitz  # PyMuPDF
+
+        # Open PDF from bytes
+        pdf_doc = fitz.open(stream=pdf_content, filetype="pdf")
+
+        # Get the page (0-indexed)
+        page_idx = page_number - 1
+        if page_idx < 0 or page_idx >= len(pdf_doc):
+            print(f"  ⚠️ Page {page_number} out of range (document has {len(pdf_doc)} pages)")
+            return None
+
+        page = pdf_doc[page_idx]
+
+        # If we have a bounding box, crop to that region
+        if bounding_box:
+            # Document Intelligence returns coordinates in inches
+            # Convert to PDF points (72 points per inch)
+            points_per_inch = 72
+
+            # Create clip rectangle from bounding box
+            # Note: Document Intelligence uses top-left origin, same as PDF
+            clip_rect = fitz.Rect(
+                bounding_box.x * points_per_inch,
+                bounding_box.y * points_per_inch,
+                (bounding_box.x + bounding_box.width) * points_per_inch,
+                (bounding_box.y + bounding_box.height) * points_per_inch
+            )
+
+            # Add some padding (5% on each side)
+            padding_x = clip_rect.width * 0.05
+            padding_y = clip_rect.height * 0.05
+            clip_rect.x0 = max(0, clip_rect.x0 - padding_x)
+            clip_rect.y0 = max(0, clip_rect.y0 - padding_y)
+            clip_rect.x1 = min(page.rect.width, clip_rect.x1 + padding_x)
+            clip_rect.y1 = min(page.rect.height, clip_rect.y1 + padding_y)
+
+            # Render the clipped region
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat, clip=clip_rect)
+        else:
+            # Render the full page if no bounding box
+            mat = fitz.Matrix(dpi / 72, dpi / 72)
+            pix = page.get_pixmap(matrix=mat)
+
+        # Convert to PNG bytes
+        png_bytes = pix.tobytes("png")
+
+        # Encode to base64
+        base64_image = base64.b64encode(png_bytes).decode("utf-8")
+
+        pdf_doc.close()
+        return base64_image
+
+    except ImportError:
+        print("  ⚠️ PyMuPDF (fitz) not installed. Run: pip install pymupdf")
+        return None
+    except Exception as e:
+        print(f"  ⚠️ Failed to extract figure image: {e}")
+        return None
+
+
+def _extract_figure_image_from_image(
+    image_content: bytes,
+    bounding_box: Optional[BoundingBox] = None
+) -> Optional[str]:
+    """
+    Extract a figure region from an image file as a base64-encoded PNG.
+
+    For standalone images, typically returns the full image unless a
+    bounding box specifies a subregion.
+
+    Args:
+        image_content: Image file bytes
+        bounding_box: Optional bounding box for cropping
+
+    Returns:
+        Base64-encoded PNG image data, or None if extraction fails
+    """
+    try:
+        # For images, we can use PIL or just return the whole image
+        # Most image uploads are single diagrams, so return full image
+        from PIL import Image
+
+        img = Image.open(io.BytesIO(image_content))
+
+        # If bounding box provided, crop (coordinates would be in pixels for images)
+        if bounding_box:
+            # Document Intelligence returns normalized coordinates for images
+            # Convert to pixel coordinates
+            width, height = img.size
+            left = int(bounding_box.x * width)
+            top = int(bounding_box.y * height)
+            right = int((bounding_box.x + bounding_box.width) * width)
+            bottom = int((bounding_box.y + bounding_box.height) * height)
+
+            # Add padding
+            padding = 10
+            left = max(0, left - padding)
+            top = max(0, top - padding)
+            right = min(width, right + padding)
+            bottom = min(height, bottom + padding)
+
+            img = img.crop((left, top, right, bottom))
+
+        # Convert to PNG bytes
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        png_bytes = buffer.getvalue()
+
+        return base64.b64encode(png_bytes).decode("utf-8")
+
+    except ImportError:
+        # PIL not available, return raw image as base64
+        return base64.b64encode(image_content).decode("utf-8")
+    except Exception as e:
+        print(f"  ⚠️ Failed to process image: {e}")
+        return base64.b64encode(image_content).decode("utf-8")
 
 
 def _analyze_diagram_with_vision(image_base64: str, context: str = "") -> dict:
@@ -285,43 +426,92 @@ def extract_diagrams_with_document_intelligence(
                     confidence=confidence
                 )
 
-                # Analyze with vision if enabled and we have image data
-                if analyze_with_vision and _is_vision_analysis_configured():
-                    # For now, we'll analyze using document context
-                    # In a full implementation, we would crop the figure region
-                    # and send that specific image to GPT-4 Vision
+                # Extract figure image for vision analysis
+                figure_image_base64 = None
+                extension = filename.lower().split(".")[-1] if "." in filename else ""
+
+                if extension == "pdf":
+                    # Extract figure region from PDF
+                    figure_image_base64 = _extract_figure_image_from_pdf(
+                        content, page_number, bounding_box
+                    )
+                elif extension in {"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp"}:
+                    # For image files, extract region or use full image
+                    figure_image_base64 = _extract_figure_image_from_image(
+                        content, bounding_box
+                    )
+
+                # Store the image for frontend display
+                if figure_image_base64:
+                    diagram.image_base64 = figure_image_base64
+
+                # Analyze with GPT-4 Vision if enabled
+                if analyze_with_vision and _is_vision_analysis_configured() and figure_image_base64:
                     context = f"Document: {filename}"
                     if caption:
                         context += f". Caption: {caption}"
 
-                    # Note: Without actual figure image extraction, we provide
-                    # limited analysis based on the full document
-                    # A full implementation would use PDF rendering to crop figures
+                    print(f"  🔍 Analyzing figure {idx + 1} on page {page_number} with GPT-4 Vision...")
+                    vision_result = _analyze_diagram_with_vision(figure_image_base64, context)
+
+                    # Update diagram with vision analysis results
+                    diagram.analysis = vision_result.get("analysis")
+                    diagram.components = vision_result.get("components", [])
+                    diagram.connections = vision_result.get("connections", [])
+                    diagram.technologies = vision_result.get("technologies", [])
+                    diagram.diagram_type = vision_result.get("diagram_type", DiagramType.UNKNOWN)
+
+                    print(f"  ✅ Figure {idx + 1}: {diagram.diagram_type.value} diagram with {len(diagram.components)} components")
+                else:
                     print(f"  🔍 Figure {idx + 1} detected on page {page_number} (confidence: {confidence:.2f})")
 
                 diagrams.append(diagram)
 
-        # Generate diagram summary
+        # Generate diagram summary including vision analysis
         diagram_summary = None
         if diagrams:
             summary_parts = [f"Found {len(diagrams)} diagram(s) in the document:"]
             for d in diagrams:
-                desc = f"- Page {d.page_number}"
+                desc = f"\n### Diagram {d.diagram_id} (Page {d.page_number})"
+                if d.diagram_type != DiagramType.UNKNOWN:
+                    desc += f" - {d.diagram_type.value.replace('_', ' ').title()} Diagram"
                 if d.caption:
-                    desc += f": {d.caption}"
+                    desc += f"\n**Caption:** {d.caption}"
                 if d.confidence > 0:
-                    desc += f" (confidence: {d.confidence:.0%})"
+                    desc += f"\n**Detection confidence:** {d.confidence:.0%}"
+
+                # Include vision analysis if available
+                if d.analysis:
+                    desc += f"\n\n**Analysis:** {d.analysis}"
+                if d.components:
+                    desc += f"\n\n**Components:** {', '.join(d.components[:10])}"
+                    if len(d.components) > 10:
+                        desc += f" (+{len(d.components) - 10} more)"
+                if d.technologies:
+                    desc += f"\n\n**Technologies:** {', '.join(d.technologies)}"
+                if d.connections:
+                    desc += f"\n\n**Data flows:** {'; '.join(d.connections[:5])}"
+                    if len(d.connections) > 5:
+                        desc += f" (+{len(d.connections) - 5} more)"
+
                 summary_parts.append(desc)
             diagram_summary = "\n".join(summary_parts)
 
-        print(f"  📊 Extracted {len(diagrams)} diagrams and {len(text_content)} chars from {filename}")
+        # Determine extraction method based on what was actually used
+        diagrams_with_vision = sum(1 for d in diagrams if d.analysis)
+        if diagrams_with_vision > 0:
+            method = "azure-document-intelligence+gpt4-vision"
+        else:
+            method = "azure-document-intelligence"
+
+        print(f"  📊 Extracted {len(diagrams)} diagrams ({diagrams_with_vision} analyzed with Vision) and {len(text_content)} chars from {filename}")
 
         return DiagramExtractionResult(
             document_name=filename,
             total_pages=total_pages,
             diagrams_found=len(diagrams),
             diagrams=diagrams,
-            extraction_method="azure-document-intelligence",
+            extraction_method=method,
             text_content=text_content,
             diagram_summary=diagram_summary
         )
