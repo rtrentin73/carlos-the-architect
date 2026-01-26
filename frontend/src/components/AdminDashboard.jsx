@@ -605,56 +605,51 @@ function UsersTab({ users, currentUser, loading, onRefresh, onAction }) {
                 </td>
                 <td className="px-4 py-3">
                   {u.username !== currentUser.username && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
                       {u.is_admin ? (
                         <button
                           onClick={() => onAction(u.username, 'demote')}
-                          className="flex items-center gap-1 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50 rounded"
+                          className="p-1.5 text-amber-700 hover:bg-amber-50 rounded"
                           title="Remove admin role"
                         >
-                          <UserMinus size={14} />
-                          Demote
+                          <UserMinus size={16} />
                         </button>
                       ) : (
                         <button
                           onClick={() => onAction(u.username, 'promote')}
-                          className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-700 hover:bg-indigo-50 rounded"
+                          className="p-1.5 text-indigo-700 hover:bg-indigo-50 rounded"
                           title="Promote to admin"
                         >
-                          <UserPlus size={14} />
-                          Promote
+                          <UserPlus size={16} />
                         </button>
                       )}
                       {u.disabled ? (
                         <button
                           onClick={() => onAction(u.username, 'enable')}
-                          className="flex items-center gap-1 px-2 py-1 text-xs text-green-700 hover:bg-green-50 rounded"
+                          className="p-1.5 text-green-700 hover:bg-green-50 rounded"
                           title="Enable account"
                         >
-                          <Unlock size={14} />
-                          Enable
+                          <Unlock size={16} />
                         </button>
                       ) : (
                         <button
                           onClick={() => onAction(u.username, 'disable')}
-                          className="flex items-center gap-1 px-2 py-1 text-xs text-red-700 hover:bg-red-50 rounded"
+                          className="p-1.5 text-orange-700 hover:bg-orange-50 rounded"
                           title="Disable account"
                         >
-                          <Lock size={14} />
-                          Disable
+                          <Lock size={16} />
                         </button>
                       )}
                       <button
                         onClick={() => handleDelete(u.username)}
-                        className={`flex items-center gap-1 px-2 py-1 text-xs rounded ${
+                        className={`p-1.5 rounded ${
                           deleteConfirm === u.username
                             ? 'bg-red-600 text-white'
                             : 'text-red-700 hover:bg-red-50'
                         }`}
-                        title={deleteConfirm === u.username ? 'Click again to confirm' : 'Delete user permanently'}
+                        title={deleteConfirm === u.username ? 'Click again to confirm deletion' : 'Delete user permanently'}
                       >
-                        <Trash2 size={14} />
-                        {deleteConfirm === u.username ? 'Confirm?' : 'Delete'}
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   )}
