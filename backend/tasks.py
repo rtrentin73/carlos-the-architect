@@ -113,23 +113,29 @@ Immediately after the **High-Level Overview** section, add a fenced Mermaid diag
 
 ```mermaid
 flowchart TD
-	user[User] --> web[Web/App Tier]
-	web --> api[API / Backend]
-	api --> db[(Primary Data Store)]
-	api --> cache[(Cache)]
+    user[User] --> web[Web Tier]
+    web --> api[API Backend]
+    api --> db[(Database)]
+    api --> cache[(Cache)]
 ```
 
-Strict rules for this diagram block:
-- Inside the ```mermaid fence, output **only** valid Mermaid flowchart syntax.
-- Do **NOT** include any markdown, bullet points, headings, comments, or natural language sentences.
-- Use exactly one top-level statement starting with `flowchart TD`.
-- Each subsequent line should be a simple node or edge definition (e.g., `a --> b` or `a[Label]`).
-- Node IDs must be simple alphanumeric strings without spaces or special characters.
-- Use square brackets `[]` for rectangular nodes, parentheses `()` for rounded nodes, curly braces `{}` for decision nodes, and `(( ))` for circular nodes.
-- Do not use quotes around node labels unless the label contains special characters.
-- Keep the diagram simple with 5-10 nodes maximum.
-- Always end edges with semicolons if using multiple edges from one node.
-- **AVOID**: Multi-word node IDs, special characters in IDs, complex labels, subgraphs, styles, or any advanced Mermaid features.
+CRITICAL Mermaid diagram rules - follow these EXACTLY or the diagram will break:
+1. Start with exactly `flowchart TD` on the first line inside the fence.
+2. One node or edge per line. Nothing else - no markdown, no comments, no blank descriptions.
+3. Node IDs must be lowercase alphanumeric only (a-z, 0-9, underscore). NEVER use spaces, hyphens, dots, or special characters in node IDs.
+4. Node labels go inside shape brackets: `mynode[My Label Here]` or `mydb[(My Database)]`.
+5. Labels must be plain text. NEVER use parentheses, brackets, braces, quotes, ampersands, slashes, colons, semicolons, or pipe characters inside a label.
+6. Edge labels: use `-->|label text|` syntax. The label text must also be plain text with no special characters.
+7. Keep it simple: 5-10 nodes maximum, no subgraphs, no styles, no class definitions, no click handlers.
+8. NEVER nest shape characters. Wrong: `db[(Database (Primary))]`. Right: `db[(Primary Database)]`.
+9. NEVER use `---`, `~~~`, or any separator lines inside the mermaid block.
+10. NEVER put blank lines inside the mermaid block.
+
+GOOD example node IDs: `user`, `webapp`, `api_gw`, `db1`, `cache01`
+BAD example node IDs: `web-app`, `api.gateway`, `my db`, `DB (Primary)`
+
+GOOD labels: `api_gw[API Gateway]`, `db[(SQL Database)]`, `lb[Load Balancer]`
+BAD labels: `api[API (v2)]`, `db[(DB/Cache)]`, `svc[Auth & Identity]`
 
 Adapt the nodes and edges to match the actual design, but always keep it as a valid Mermaid `flowchart` definition inside a ```mermaid code block placed directly under the High-Level Overview text.
 
@@ -366,24 +372,30 @@ Immediately after the **High-Level Overview** section, add a fenced Mermaid diag
 
 ```mermaid
 flowchart TD
-	user[User] --> ingress[Ingress Controller]
-	ingress --> svc[Service Mesh]
-	svc --> pods[Microservice Pods]
-	pods --> k8s[Kubernetes Cluster]
-	k8s --> cloud[Cloud Native Services]
+    user[User] --> ingress[Ingress Controller]
+    ingress --> mesh[Service Mesh]
+    mesh --> pods[Microservice Pods]
+    pods --> k8s[K8s Cluster]
+    k8s --> cloud[Cloud Services]
 ```
 
-Strict rules for this diagram block:
-- Inside the ```mermaid fence, output **only** valid Mermaid flowchart syntax.
-- Do **NOT** include any markdown, bullet points, headings, comments, or natural language sentences.
-- Use exactly one top-level statement starting with `flowchart TD`.
-- Each subsequent line should be a simple node or edge definition (e.g., `a --> b` or `a[Label]`).
-- Node IDs must be simple alphanumeric strings without spaces or special characters.
-- Use square brackets `[]` for rectangular nodes, parentheses `()` for rounded nodes, curly braces `{}` for decision nodes, and `(( ))` for circular nodes.
-- Do not use quotes around node labels unless the label contains special characters.
-- Keep the diagram simple with 5-10 nodes maximum.
-- Always end edges with semicolons if using multiple edges from one node.
-- **AVOID**: Multi-word node IDs, special characters in IDs, complex labels, subgraphs, styles, or any advanced Mermaid features.
+CRITICAL Mermaid diagram rules - follow these EXACTLY or the diagram will break:
+1. Start with exactly `flowchart TD` on the first line inside the fence.
+2. One node or edge per line. Nothing else - no markdown, no comments, no blank descriptions.
+3. Node IDs must be lowercase alphanumeric only (a-z, 0-9, underscore). NEVER use spaces, hyphens, dots, or special characters in node IDs.
+4. Node labels go inside shape brackets: `mynode[My Label Here]` or `mydb[(My Database)]`.
+5. Labels must be plain text. NEVER use parentheses, brackets, braces, quotes, ampersands, slashes, colons, semicolons, or pipe characters inside a label.
+6. Edge labels: use `-->|label text|` syntax. The label text must also be plain text with no special characters.
+7. Keep it simple: 5-10 nodes maximum, no subgraphs, no styles, no class definitions, no click handlers.
+8. NEVER nest shape characters. Wrong: `db[(Database (Primary))]`. Right: `db[(Primary Database)]`.
+9. NEVER use `---`, `~~~`, or any separator lines inside the mermaid block.
+10. NEVER put blank lines inside the mermaid block.
+
+GOOD example node IDs: `user`, `webapp`, `api_gw`, `db1`, `cache01`
+BAD example node IDs: `web-app`, `api.gateway`, `my db`, `DB (Primary)`
+
+GOOD labels: `api_gw[API Gateway]`, `db[(SQL Database)]`, `lb[Load Balancer]`
+BAD labels: `api[API (v2)]`, `db[(DB/Cache)]`, `svc[Auth & Identity]`
 
 Make your design more "modern" and container-focused than Carlos', but still practical.
 
