@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.12](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.11...v0.2.12) (2026-01-27)
+
+
+### Bug Fixes
+
+* Strengthen Mermaid diagram rules in LLM prompts to prevent synta… ([4005b24](https://github.com/rtrentin73/carlos-the-architect/commit/4005b2439e097e7a5a72e898ab95e852bc10b047))
+* Strengthen Mermaid diagram rules in LLM prompts to prevent syntax errors ([64527eb](https://github.com/rtrentin73/carlos-the-architect/commit/64527eb0b9b35d901b405ee1b22a5f9768dcf031))
+
 ## [0.2.11](https://github.com/rtrentin73/carlos-the-architect/compare/v0.2.10...v0.2.11) (2026-01-26)
 
 
